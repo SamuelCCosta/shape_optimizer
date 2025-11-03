@@ -1,0 +1,36 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Users/samue/Documents/ProjetosCPP/libraries/**"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "compilerPath": "C:/cygwin64/bin/g++.exe",
+            "cStandard": "c17",
+            "cppStandard": "gnu++23",
+            "intelliSenseMode": "windows-gcc-x64",
+            "configurationProvider": "ms-vscode.makefile-tools"
+        },
+        {
+            "name": "NixOS Flake", // Give it a descriptive name
+            "compilerPath": "/nix/store/dmypp1h4ldn0vfk3fi6yfyf5yxp9yz0k-gcc-wrapper-14.3.0/bin/g++",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/nix/store/rdms7s1dgyxxvvzmli098wpr5355cmaw-maniFEM-25.02/include",
+                "/nix/store/9316dfg1yayh4pr7jscvj6q7zrgiqgb7-eigen-3.4.0-unstable-2022-05-19/include/eigen3"
+            ],
+            "defines": [],
+            "cStandard": "c17",
+            "cppStandard": "c++23",
+            "intelliSenseMode": "linux-gcc-x64",
+            "configurationProvider": "ms-vscode.cpptools"
+        }
+    ],
+    "version": 4
+}

@@ -1,0 +1,7 @@
+*.o
+*.out
+*.profile
+*.txt
+*.msh
+*.p.o
+.direnv/
