@@ -20,20 +20,16 @@ CFLAGS := $(CFLAGS) -std=c++23 -c -Wshadow -Wall -I .
 
 PROFILE_CFLAGS = $(CFLAGS) $(PROFILE_FLAGS)
 
-PROFILE_OBJS = main.p.o maniUtils.p.o maniSolver.p.o
+PROFILE_OBJS = main.p.o maniUtils.p.o maniSolver.p.o ellipse.p.o
 PROFILE_REPORT = analysis.txt
 
-OBJS = main.o maniUtils.o maniSolver.o
+OBJS = main.o maniUtils.o maniSolver.o ellipse.o
 
 %.o: %.cpp
 	$(CC) $(CFLAGS) $^
 
 %.p.o: %.cpp
 	$(CC) $(PROFILE_CFLAGS) -c $^ -o $@
-
-#uncomment se manifem não estiver no PATH (comentar o comando abaixo)
-#a.out: main.o maniUtils.o
-#	$(CC) $^ -L$(MANIFEM_DIR) -lmaniFEM -o a.out
 
 a.out: ${OBJS}
 	$(CC) $^ -lmaniFEM -o a.out 

@@ -1,7 +1,10 @@
 #include "maniFEM.h"
 #include "maniUtils.h"
 #include "maniSolver.h"
+#include "ellipse.h"
+#include "constants.h"
 
+#include <cmath>
 #include <fstream>
 #include <optional>
 #include <Eigen/SparseCore>
@@ -9,64 +12,70 @@
 
 using namespace maniFEM;
 
-int main(){
-    // Constantes
-    const double h = 0.1; // comprimento médio da malha
-    const double radius = 1.; // raio do disco
-    constexpr size_t degree = 1;
-    constexpr bool hand_coded = 1;
-    const bool export_file = 1;
-    assert(degree == 1 || degree == 2);
-    assert(!(degree == 2 && hand_coded));
+inline constexpr int n_segments(double l){
+    return std::ceil(l/h);
+}
 
+int main(){
+    bool solve = true;
 
     Manifold RR2(tag:: Euclid, tag::of_dim, 2);
     Function xy = RR2.build_coordinate_system(tag::Lagrange, tag::of_degree, 1);
     Function x = xy[0], y = xy[1];
 
+    const Function f = 0;
+    const Function heat_source = 10; //condição neumann fronteira superior
+    const Function base_temp = 0; //condição dirichlet base
 
-    /* u(x,y) = x^2 + y^2  
-    -lap u = -4 u(S^1)= 1 du/dn(S1) = 2
-    f = -4 , g = 1, normal_deriv = 2
-    */
 
-    //const Function f = -1 * exp(-x*x-y*y) * sin(x*y) * cos(x*y); // -lap u = f
-    const Function f = -4;
+    //Quadrado Completo (fronteira)
+    const Cell NW(tag::vertex); x(NW) = 0; y(NW) = 1;
+    const Cell NE(tag::vertex); x(NE) = 1; y(NE) = 1;
+    const Cell SW(tag::vertex); x(SW) = 0; y(SW) = 0;
+    const Cell SE(tag::vertex); x(SE) = 1; y(SE) = 0;
 
-    const Function g = 1; //Condição de fronteira de Dirichlet
+    static constexpr float MW_x = 0.3f;
+    static constexpr float ME_x = 0.7f;
+    const Cell MW(tag::vertex); x(MW) = MW_x; y(MW) = 1;
+    const Cell ME(tag::vertex); x(ME) = ME_x; y(ME) = 1;
 
-    const Function normal_deriv = 2; //condição de fronteira de Neumann
-
-    const Manifold circle = RR2.implicit(x*x + y*y == radius * radius);
-
-    //Fronteira Dirichlet/Neumann
-    const Cell start_dirichlet(tag::vertex); x(start_dirichlet) = radius; y(start_dirichlet) = 0;
-    const Cell end_dirichlet(tag::vertex); x(end_dirichlet) = -radius; y(end_dirichlet) = 0;
-    const Cell& start_neumann = end_dirichlet; 
-    const Cell& end_neumann = start_dirichlet;
-    const std::vector<double> dirichlet_direction = {0,1};
-    const std::vector<double> neumann_direction = {0,-1};
-
-    Mesh dirichlet_bdry = Mesh::Build(tag::frontal).start_at(start_dirichlet)
-                        .towards(dirichlet_direction).stop_at(end_dirichlet).desired_length(h);
-    Mesh neumann_bdry = Mesh::Build(tag::frontal).start_at(start_neumann)
-                            .towards(neumann_direction).stop_at(end_neumann).desired_length(h);
-
-    Mesh bdry = Mesh::Build(tag::join).meshes({dirichlet_bdry,neumann_bdry});
-
-    RR2.set_as_working_manifold();
-    Mesh disk = Mesh::Build (tag::frontal). boundary(bdry). desired_length(h);
+    constexpr float mid_l = ME_x - MW_x;
+    constexpr auto &midW_l = MW_x;
+    constexpr float midE_l = 1 - ME_x;
     
-    std::map<Cell, size_t> numbering = create_node_numbering(disk, degree);
-    
-    
-    Eigen::VectorXd solution = (hand_coded)? build_poisson_solution(f, g, normal_deriv, disk, dirichlet_bdry, neumann_bdry, numbering, tag::hand_coded):
-                                             build_poisson_solution(f, g, normal_deriv, disk, dirichlet_bdry, neumann_bdry, bdry, numbering, degree);
-    
+    const Mesh MNE = Mesh::Build(tag::grid).shape(tag::segment).start_at(NE).stop_at(ME).divided_in(n_segments(midE_l));
+    const Mesh north_middle = Mesh::Build(tag::grid).shape(tag::segment).start_at(ME).stop_at(MW).divided_in(n_segments(mid_l));
+    const Mesh NWM = Mesh::Build(tag::grid).shape(tag::segment).start_at(MW).stop_at(NW).divided_in(n_segments(midW_l));
+    const Mesh west = Mesh::Build(tag::grid).shape(tag::segment).start_at(NW).stop_at(SW).divided_in(n_segments(1));
+    const Mesh south = Mesh::Build(tag::grid).shape(tag::segment).start_at(SW).stop_at(SE).divided_in(n_segments(1));
+    const Mesh east = Mesh::Build(tag::grid).shape(tag::segment).start_at(SE).stop_at(NE).divided_in(n_segments(1));
 
-    //Exportar ficheiro
+    const Mesh null_neumann = Mesh::Build(tag::join).meshes({east, west, north_middle}); //podemos ignorar
+    const Mesh sources = Mesh::Build(tag::join).meshes({NWM,MNE});
+    const Mesh square_boundary = Mesh::Build(tag::join).meshes({south, null_neumann, sources});
+
+    //const Mesh square_boundary = Mesh::Build(tag::join).meshes({NWM, north_middle, MNE, east, south, west});
+
+    Ellipse hole(0.4, 0.6, 0.3, 0.1, pi / 3.0);
+    
+    Mesh hole_mesh = hole.get_mesh();
+    
+    const Mesh boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(hole_mesh);
+
+    RR2.set_as_working_manifold(); //não devia ser necessário...
+
+    const Mesh domain = Mesh::Build(tag::frontal).boundary(boundary).desired_length(h);
+
+    if (!solve) {domain.export_to_file(tag::gmsh, "domain.msh");}
+
+    if (solve){
+    std::map<Cell, size_t> numbering = create_node_numbering(domain, degree);
+    
+    Eigen::VectorXd solution = (hand_coded)? build_poisson_solution(f, base_temp, heat_source, domain, south, sources, numbering, tag::hand_coded):
+                                             build_poisson_solution(f, base_temp, heat_source, domain, south, sources, square_boundary, numbering, degree);
+    
     if (degree == 1 && export_file) {
-        disk.export_to_file ( tag::gmsh, "solution.msh", numbering );
+        domain.export_to_file ( tag::gmsh, "solution.msh", numbering );
 
         //Mexer no .msh
         {
@@ -79,8 +88,8 @@ int main(){
         solution_file << "3" << std::endl;   // three integers follow
         solution_file << "0" << std::endl;   // time step [??]
         solution_file << "1" << std::endl;  // scalar values of u
-        solution_file << disk.number_of ( tag::vertices ) << std::endl;  // number of values listed below
-        Mesh::Iterator it = disk.iterator ( tag::over_vertices );
+        solution_file << domain.number_of ( tag::vertices ) << std::endl;  // number of values listed below
+        Mesh::Iterator it = domain.iterator ( tag::over_vertices );
         for ( it .reset(); it .in_range(); it++ )
         {	Cell P = *it;
             const size_t i = numbering [P];
@@ -88,5 +97,9 @@ int main(){
         }
     }
     
+    } //if solve
+
 	return 0;
 }
+
+// scp samuel@192.168.1.145:/home/samuel/shape_optimizer/domain.msh .
