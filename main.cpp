@@ -17,8 +17,6 @@ inline constexpr int n_segments(double l){
 }
 
 int main(){
-    bool solve = true;
-
     Manifold RR2(tag:: Euclid, tag::of_dim, 2);
     Function xy = RR2.build_coordinate_system(tag::Lagrange, tag::of_degree, 1);
     Function x = xy[0], y = xy[1];
@@ -56,20 +54,28 @@ int main(){
 
     //const Mesh square_boundary = Mesh::Build(tag::join).meshes({NWM, north_middle, MNE, east, south, west});
 
-    Ellipse hole(0.4, 0.6, 0.3, 0.1, pi / 3.0);
+    Ellipse hole1(0.5, 0.5, 0.39, 0.1, pi/3.0);  //suspeito que os checks estejam errados
+
+    Ellipse hole2(0.7, 0.5, 0.28, 0.07, pi/2.0);
+    Mesh hole1_mesh = hole1.get_mesh();
+    RR2.set_as_working_manifold();
+    /*Mesh hole2_mesh = hole2.get_mesh();
+    RR2.set_as_working_manifold();*/
+
+    Mesh inner_boundary = Mesh::Build(tag::join).meshes({hole1_mesh});
     
-    Mesh hole_mesh = hole.get_mesh();
-    
-    const Mesh boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(hole_mesh);
+    const Mesh boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(inner_boundary);
 
     RR2.set_as_working_manifold(); //não devia ser necessário...
 
     const Mesh domain = Mesh::Build(tag::frontal).boundary(boundary).desired_length(h);
 
-    if (!solve) {domain.export_to_file(tag::gmsh, "domain.msh");}
+    domain.export_to_file(tag::gmsh, "domain.msh");
 
+    bool solve = true;
     if (solve){
     std::map<Cell, size_t> numbering = create_node_numbering(domain, degree);
+    std::cout << "Dim: " << numbering.size() << std::endl;
     
     Eigen::VectorXd solution = (hand_coded)? build_poisson_solution(f, base_temp, heat_source, domain, south, sources, numbering, tag::hand_coded):
                                              build_poisson_solution(f, base_temp, heat_source, domain, south, sources, square_boundary, numbering, degree);

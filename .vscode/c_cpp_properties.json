@@ -18,7 +18,7 @@
             "configurationProvider": "ms-vscode.makefile-tools"
         },
         {
-            "name": "NixOS Flake", // Give it a descriptive name
+            "name": "NixOS Flake",
             "compilerPath": "/nix/store/dmypp1h4ldn0vfk3fi6yfyf5yxp9yz0k-gcc-wrapper-14.3.0/bin/g++",
             "includePath": [
                 "${workspaceFolder}/**",
