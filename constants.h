@@ -8,6 +8,7 @@ constexpr double h = 0.02; // comprimento médio da malha
 constexpr size_t degree = 1;
 constexpr bool hand_coded = 1;
 constexpr bool export_file = 1;
+constexpr size_t num_ellipses = 10; //será uma variável dinâmica depois provavelmente
 
 constexpr double pi = std::numbers::pi;
 constexpr double two_pi = std::numbers::pi + std::numbers::pi;
