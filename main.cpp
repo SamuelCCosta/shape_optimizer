@@ -48,25 +48,27 @@ int main(){
     const Mesh south = Mesh::Build(tag::grid).shape(tag::segment).start_at(SW).stop_at(SE).divided_in(n_segments(1));
     const Mesh east = Mesh::Build(tag::grid).shape(tag::segment).start_at(SE).stop_at(NE).divided_in(n_segments(1));
 
-    const Mesh null_neumann = Mesh::Build(tag::join).meshes({east, west, north_middle}); //podemos ignorar
+    const Mesh null_neumann = Mesh::Build(tag::join).meshes({east, west, north_middle}); //podemos ignorar na construção das condições
     const Mesh sources = Mesh::Build(tag::join).meshes({NWM,MNE});
     const Mesh square_boundary = Mesh::Build(tag::join).meshes({south, null_neumann, sources});
 
     //const Mesh square_boundary = Mesh::Build(tag::join).meshes({NWM, north_middle, MNE, east, south, west});
 
-    Ellipse hole1(0.5, 0.5, 0.39, 0.1, pi/3.0);  //suspeito que os checks estejam errados
-
-    Ellipse hole2(0.7, 0.5, 0.28, 0.07, pi/2.0);
-    Mesh hole1_mesh = hole1.get_mesh();
-    RR2.set_as_working_manifold();
-    /*Mesh hole2_mesh = hole2.get_mesh();
-    RR2.set_as_working_manifold();*/
-
-    Mesh inner_boundary = Mesh::Build(tag::join).meshes({hole1_mesh});
+    // a = 0.39, b = 0.1, theta = pi/3
+    Ellipse hole1(0.5, 0.5, 76.644, -40.453, 29.932);
+    std::cout << "ellipse 1" << std::endl;
+    // a = 0.28, b = 0.07, theta = pi/2
+    Ellipse hole2(0.8, 0.5, 204.082, 0.0, 12.755);
+    std::cout << "ellipse 2" << std::endl;
     
-    const Mesh boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(inner_boundary);
+    EllipseBundle ellipses;
 
-    RR2.set_as_working_manifold(); //não devia ser necessário...
+    ellipses.add(hole1);
+    ellipses.add(hole2);
+
+    Mesh inner_boundary = ellipses.total_mesh();
+    
+    Mesh boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(inner_boundary);
 
     const Mesh domain = Mesh::Build(tag::frontal).boundary(boundary).desired_length(h);
 
