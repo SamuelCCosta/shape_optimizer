@@ -54,12 +54,14 @@ int main(){
 
     //const Mesh square_boundary = Mesh::Build(tag::join).meshes({NWM, north_middle, MNE, east, south, west});
 
+    std::cout << "ellipse 1" << std::endl;
     // a = 0.39, b = 0.1, theta = pi/3
     Ellipse hole1(0.5, 0.5, 76.644, -40.453, 29.932);
-    std::cout << "ellipse 1" << std::endl;
-    // a = 0.28, b = 0.07, theta = pi/2
-    Ellipse hole2(0.8, 0.5, 204.082, 0.0, 12.755);
+    
     std::cout << "ellipse 2" << std::endl;
+    // a = 0.28, b = 0.07, theta = pi/2
+    Ellipse hole2(0.75, 0.31, 204.082, 0.0, 12.755);
+    
     
     EllipseBundle ellipses;
 

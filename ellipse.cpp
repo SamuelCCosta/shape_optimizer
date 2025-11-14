@@ -20,7 +20,9 @@ Ellipse::Ellipse(double x, double y, double A_, double B_, double C_) : A(A_), B
     //bounds checking
     double horizontal_margin = h + width;
     double vertical_margin = h + height;
-
+    std::cout << "x_min: " << horizontal_margin << " y_min: " << vertical_margin << std::endl;
+    std::cout << "x_max: " << 1 - horizontal_margin << " y_max: " << 1 - vertical_margin << std::endl;
+    std::cout << "x: " << x << " y: " << y << std::endl;
     if ((y < vertical_margin) || (x < horizontal_margin) ||
     (y > 1 - vertical_margin) || (x > 1 - horizontal_margin) ) {
         throw std::invalid_argument("Ellipse does not fit in the unit square.");
@@ -79,8 +81,8 @@ bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2){
 //provavelmente será mudado no futuro por algo com mais performance (maybe not)
 bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const {
     auto [theta1, theta2] = get_initial_thetas(e1, e2); //ponto inicial
-    const double learning_rate = 0.1;
-    const int max_iterations = 100;
+    const double learning_rate = 5;
+    const int max_iterations = 200;
     const double tolerance_sq = 1e-10;
 
     for (int i = 0; i < max_iterations; ++i) {
@@ -98,6 +100,8 @@ bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const
     }
     double min_sq_dist = (e1.point_at(theta1) - e2.point_at(theta2)).squaredNorm();
     
+    std::cout << "min dist^2: " << min_sq_dist << std::endl;
+    std::cout << "h^2: " << h*h << std::endl;
     return min_sq_dist <= h * h + 1e-9;
 }
 
