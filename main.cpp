@@ -1,115 +1,41 @@
-#include "maniFEM.h"
-#include "maniUtils.h"
-#include "maniSolver.h"
-#include "ellipse.h"
-#include "constants.h"
-
-#include <cmath>
-#include <fstream>
-#include <optional>
-#include <Eigen/SparseCore>
-#include <Eigen/IterativeLinearSolvers>
+#include "square_solver.h"
+#include <chrono>
 
 using namespace maniFEM;
 
-inline constexpr int n_segments(double l){
-    return std::ceil(l/h);
-}
-
-int main(){
+void objective_ellipses(){
     Manifold RR2(tag:: Euclid, tag::of_dim, 2);
     Function xy = RR2.build_coordinate_system(tag::Lagrange, tag::of_degree, 1);
     Function x = xy[0], y = xy[1];
 
-    const Function f = 0;
-    const Function heat_source = 10; //condição neumann fronteira superior
-    const Function base_temp = 0; //condição dirichlet base
+    const double heat_source = 10; //condição neumann fronteira superior
+    const double base_temp = 0; //condição dirichlet na base
+    constexpr bool export_mesh = false;
 
-
-    //Quadrado Completo (fronteira)
-    const Cell NW(tag::vertex); x(NW) = 0; y(NW) = 1;
-    const Cell NE(tag::vertex); x(NE) = 1; y(NE) = 1;
-    const Cell SW(tag::vertex); x(SW) = 0; y(SW) = 0;
-    const Cell SE(tag::vertex); x(SE) = 1; y(SE) = 0;
-
-    static constexpr float MW_x = 0.3f;
-    static constexpr float ME_x = 0.7f;
-    const Cell MW(tag::vertex); x(MW) = MW_x; y(MW) = 1;
-    const Cell ME(tag::vertex); x(ME) = ME_x; y(ME) = 1;
-
-    constexpr float mid_l = ME_x - MW_x;
-    constexpr auto &midW_l = MW_x;
-    constexpr float midE_l = 1 - ME_x;
-    
-    const Mesh MNE = Mesh::Build(tag::grid).shape(tag::segment).start_at(NE).stop_at(ME).divided_in(n_segments(midE_l));
-    const Mesh north_middle = Mesh::Build(tag::grid).shape(tag::segment).start_at(ME).stop_at(MW).divided_in(n_segments(mid_l));
-    const Mesh NWM = Mesh::Build(tag::grid).shape(tag::segment).start_at(MW).stop_at(NW).divided_in(n_segments(midW_l));
-    const Mesh west = Mesh::Build(tag::grid).shape(tag::segment).start_at(NW).stop_at(SW).divided_in(n_segments(1));
-    const Mesh south = Mesh::Build(tag::grid).shape(tag::segment).start_at(SW).stop_at(SE).divided_in(n_segments(1));
-    const Mesh east = Mesh::Build(tag::grid).shape(tag::segment).start_at(SE).stop_at(NE).divided_in(n_segments(1));
-
-    const Mesh null_neumann = Mesh::Build(tag::join).meshes({east, west, north_middle}); //podemos ignorar na construção das condições
-    const Mesh sources = Mesh::Build(tag::join).meshes({NWM,MNE});
-    const Mesh square_boundary = Mesh::Build(tag::join).meshes({south, null_neumann, sources});
-
-    //const Mesh square_boundary = Mesh::Build(tag::join).meshes({NWM, north_middle, MNE, east, south, west});
-
-    std::cout << "ellipse 1" << std::endl;
-    // a = 0.39, b = 0.1, theta = pi/3
-    Ellipse hole1(0.5, 0.5, 76.644, -40.453, 29.932);
-    
-    std::cout << "ellipse 2" << std::endl;
-    // a = 0.28, b = 0.07, theta = pi/2
-    Ellipse hole2(0.75, 0.31, 204.082, 0.0, 12.755);
-    
-    
     EllipseBundle ellipses;
 
-    ellipses.add(hole1);
-    ellipses.add(hole2);
+    ellipses.add(Ellipse(0.5, 0.5, 78.1888, -37.7726, 34.5663)); // a = 0.28, b = 0.1, theta = pi/3
+    ellipses.add(Ellipse(0.7, 0.31, 204.082, 0.0, 12.755)); // a = 0.28, b = 0.07, theta = pi/2
+    ellipses.add(Ellipse(0.19, 0.59, 45.0817, -25.1834, 200.0929)); //a = 0.156, b = 0.07, theta = pi/20
+    ellipses.add(Ellipse(0.19, 0.17, 45.0817, -25.1834, 200.0929)); //a = 0.156, b = 0.07, theta = pi/20
 
-    Mesh inner_boundary = ellipses.total_mesh();
-    
-    Mesh boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(inner_boundary);
+    double value = objective(heat_source, base_temp, ellipses, export_mesh);
 
-    const Mesh domain = Mesh::Build(tag::frontal).boundary(boundary).desired_length(h);
-
-    domain.export_to_file(tag::gmsh, "domain.msh");
-
-    bool solve = true;
-    if (solve){
-    std::map<Cell, size_t> numbering = create_node_numbering(domain, degree);
-    std::cout << "Dim: " << numbering.size() << std::endl;
-    
-    Eigen::VectorXd solution = (hand_coded)? build_poisson_solution(f, base_temp, heat_source, domain, south, sources, numbering, tag::hand_coded):
-                                             build_poisson_solution(f, base_temp, heat_source, domain, south, sources, square_boundary, numbering, degree);
-    
-    if (degree == 1 && export_file) {
-        domain.export_to_file ( tag::gmsh, "solution.msh", numbering );
-
-        //Mexer no .msh
-        {
-        std::ofstream solution_file ( "solution.msh", std::fstream::app );
-        solution_file << "$NodeData" << std::endl;
-        solution_file << "1" << std::endl;   // one string follows
-        solution_file << "\"Solution\"" << std::endl;
-        solution_file << "1" << std::endl;   //  one real follows
-        solution_file << "0.0" << std::endl;  // time [??]
-        solution_file << "3" << std::endl;   // three integers follow
-        solution_file << "0" << std::endl;   // time step [??]
-        solution_file << "1" << std::endl;  // scalar values of u
-        solution_file << domain.number_of ( tag::vertices ) << std::endl;  // number of values listed below
-        Mesh::Iterator it = domain.iterator ( tag::over_vertices );
-        for ( it .reset(); it .in_range(); it++ )
-        {	Cell P = *it;
-            const size_t i = numbering [P];
-            solution_file << i+1 << " " << solution [i] << std::endl;   }
-        }
-    }
-    
-    } //if solve
-
-	return 0;
+    std::cout << "Objective: " << value << std::endl;
 }
 
-// scp samuel@192.168.1.145:/home/samuel/shape_optimizer/domain.msh .
+int main(){
+    auto start = std::chrono::high_resolution_clock::now();
+
+    objective_ellipses();
+
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+    std::cout << "Execution time: " << duration.count() << " milliseconds" << std::endl;
+    return 0;
+}
+
+// para h = 0.02, o código é executado em ~200ms (Ryzen 5 7600)
+// sem escrever os ficheiros .msh, demora ~140ms

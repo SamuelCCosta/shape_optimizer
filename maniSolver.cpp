@@ -2,7 +2,8 @@
 #include "maniUtils.h"
 
 Eigen::VectorXd build_poisson_solution(const Function& f, const Function& boundary_value, const Function& normal_deriv,
-    const Mesh& domain, const Mesh& dirichlet_boundary, const Mesh& neumann_boundary, const Mesh& boundary, const std::map<Cell, size_t>& numbering, const size_t& degree){
+    const Mesh& domain, const Mesh& dirichlet_boundary, const Mesh& neumann_boundary, const Mesh& boundary,
+    const std::map<Cell, size_t>& numbering, const size_t& degree){
     
     assert(degree == 1 || degree == 2);
     
@@ -273,6 +274,188 @@ Eigen::VectorXd build_poisson_solution(const Function& f, const Function& bounda
         size_t i = numbering.at(P);
         //Forçar valor dos nodos da fronteira para boundary_value
         impose_value_of_unknown(matrix_A, vector_b, i, boundary_value(P));
+    }
+    }
+    //Resolver sistema linear
+    Eigen::ConjugateGradient <Eigen::SparseMatrix<double>,
+                            Eigen::Lower | Eigen::Upper> cg;
+
+    cg.compute(matrix_A);
+
+    Eigen::VectorXd solution = cg.solve(vector_b);
+    if(cg.info() != Eigen::Success)
+        std::cout << "Eigen solver failed" << std::endl;
+
+    return solution;
+}
+
+//hand coded Lagrange P1 finite elements
+Eigen::VectorXd build_laplace_solution(const Function& boundary_value, const Function& normal_deriv, const Mesh& domain,
+    const Mesh& dirichlet_boundary, const Mesh& neumann_boundary, const std::map<Cell, size_t>& numbering){
+        
+    Manifold& active_manifold = Manifold::working;
+    Function xy = active_manifold.coordinates();
+    Function x = xy[0], y = xy[1];
+
+    FiniteElement fe_hand(tag::triangle, tag::Lagrange, tag::of_degree, 1);
+    Integrator hand_integr = fe_hand.set_integrator(tag::hand_coded);
+    Function bf1(tag::basis_function, tag::within, fe_hand),
+             bf2(tag::basis_function, tag::within, fe_hand);
+    
+    fe_hand.pre_compute(tag::for_given, tag::basis_functions, bf1, bf2, tag::integral_of,
+                            {bf1 .deriv(x) * bf2 .deriv(x) + bf1 .deriv(y) * bf2 .deriv(y)});
+
+    FiniteElement fe_bdry(tag::with_master, tag::segment, tag::Lagrange, tag::of_degree, 1);
+    Integrator integr_bdry= fe_bdry.set_integrator(tag::Gauss, tag::seg_3);
+    
+    //Definir matriz A e vetor b
+    size_t size_matrix = numbering.size();
+    Eigen::SparseMatrix<double> matrix_A(size_matrix, size_matrix);
+    Eigen::VectorXd vector_b(size_matrix); vector_b.setZero();
+
+    matrix_A.reserve(Eigen::VectorXi::Constant(size_matrix, 8));
+
+    //Construção do sistema
+    {
+    Mesh::Iterator it = domain.iterator(tag::over_cells_of_max_dim);
+    for(it.reset(); it.in_range(); it++){
+        Cell tri = *it;
+        fe_hand.dock_on(tri);
+        //Iterar duas vezes sob vértices
+        Mesh::Iterator itV = tri.boundary().iterator(tag::over_vertices);
+        Mesh::Iterator itW = tri.boundary().iterator(tag::over_vertices);
+    
+        for(itV.reset(); itV.in_range(); itV++){
+            Cell V = *itV;
+            Function phi_V = fe_hand.basis_function(V);
+
+            for(itW.reset(); itW.in_range(); itW++){
+                Cell W = *itW;
+                Function phi_W = fe_hand.basis_function(W);
+
+                std::vector<double> result = fe_hand.integrate(tag::pre_computed,
+                                              tag::replace, bf1, tag::by, phi_V,
+                                              tag::replace, bf2, tag::by, phi_W);
+
+                matrix_A.coeffRef(numbering.at(V),numbering.at(W)) += result[0];
+            }
+        }
+    }
+    }   
+    //Condição de Neumann
+    {
+    Mesh::Iterator it = neumann_boundary.iterator(tag::over_cells_of_max_dim);
+    for(it.reset(); it.in_range(); it++){
+        Cell seg = *it;
+        fe_bdry.dock_on(seg);
+        Mesh::Iterator it_vert = seg.boundary().iterator(tag::over_vertices, tag::force_positive);
+        for(it_vert.reset(); it_vert.in_range(); it_vert++){
+            Cell V = *it_vert;
+            Function phi_V = fe_bdry.basis_function(V);
+            vector_b(numbering.at(V)) +=
+                fe_bdry.integrate(normal_deriv * phi_V);
+        }
+    }
+    }
+    //Condição de Dirichlet
+    {
+    Mesh::Iterator it = dirichlet_boundary.iterator(tag::over_vertices);
+    for(it.reset(); it.in_range(); it++){
+        Cell P = *it;
+        size_t i = numbering.at(P);
+        //Forçar valor dos nodos da fronteira para boundary_value
+        impose_value_of_unknown(matrix_A, vector_b, i, boundary_value(P));
+    }
+    }
+    //Resolver sistema linear
+    Eigen::ConjugateGradient <Eigen::SparseMatrix<double>,
+                            Eigen::Lower | Eigen::Upper> cg;
+
+    cg.compute(matrix_A);
+
+    Eigen::VectorXd solution = cg.solve(vector_b);
+    if(cg.info() != Eigen::Success)
+        std::cout << "Eigen solver failed" << std::endl;
+
+    return solution;
+}
+
+//para condições de fronteira constantes
+Eigen::VectorXd build_laplace_solution(const double boundary_value, const double normal_deriv, const Mesh& domain,
+    const Mesh& dirichlet_boundary, const Mesh& neumann_boundary, const std::map<Cell, size_t>& numbering){
+        
+    Manifold& active_manifold = Manifold::working;
+    Function xy = active_manifold.coordinates();
+    Function x = xy[0], y = xy[1];
+
+    FiniteElement fe_hand(tag::triangle, tag::Lagrange, tag::of_degree, 1);
+    Integrator hand_integr = fe_hand.set_integrator(tag::hand_coded);
+    Function bf1(tag::basis_function, tag::within, fe_hand),
+             bf2(tag::basis_function, tag::within, fe_hand);
+    
+    fe_hand.pre_compute(tag::for_given, tag::basis_functions, bf1, bf2, tag::integral_of,
+                            {bf1 .deriv(x) * bf2 .deriv(x) + bf1 .deriv(y) * bf2 .deriv(y)});
+
+    FiniteElement fe_bdry(tag::with_master, tag::segment, tag::Lagrange, tag::of_degree, 1);
+    Integrator integr_bdry= fe_bdry.set_integrator(tag::Gauss, tag::seg_3);
+    
+    //Definir matriz A e vetor b
+    size_t size_matrix = numbering.size();
+    Eigen::SparseMatrix<double> matrix_A(size_matrix, size_matrix);
+    Eigen::VectorXd vector_b(size_matrix); vector_b.setZero();
+
+    matrix_A.reserve(Eigen::VectorXi::Constant(size_matrix, 8));
+
+    //Construção do sistema
+    {
+    Mesh::Iterator it = domain.iterator(tag::over_cells_of_max_dim);
+    for(it.reset(); it.in_range(); it++){
+        Cell tri = *it;
+        fe_hand.dock_on(tri); //problema aqui
+        //Iterar duas vezes sob vértices
+        Mesh::Iterator itV = tri.boundary().iterator(tag::over_vertices);
+        Mesh::Iterator itW = tri.boundary().iterator(tag::over_vertices);
+    
+        for(itV.reset(); itV.in_range(); itV++){
+            Cell V = *itV;
+            Function phi_V = fe_hand.basis_function(V);
+
+            for(itW.reset(); itW.in_range(); itW++){
+                Cell W = *itW;
+                Function phi_W = fe_hand.basis_function(W);
+
+                std::vector<double> result = fe_hand.integrate(tag::pre_computed,
+                                              tag::replace, bf1, tag::by, phi_V,
+                                              tag::replace, bf2, tag::by, phi_W);
+
+                matrix_A.coeffRef(numbering.at(V),numbering.at(W)) += result[0];
+            }
+        }
+    }
+    }   
+    //Condição de Neumann
+    {
+    Mesh::Iterator it = neumann_boundary.iterator(tag::over_cells_of_max_dim);
+    for(it.reset(); it.in_range(); it++){
+        Cell seg = *it;
+        fe_bdry.dock_on(seg);
+        Mesh::Iterator it_vert = seg.boundary().iterator(tag::over_vertices, tag::force_positive);
+        for(it_vert.reset(); it_vert.in_range(); it_vert++){
+            Cell V = *it_vert;
+            Function phi_V = fe_bdry.basis_function(V);
+            vector_b(numbering.at(V)) +=
+                normal_deriv * fe_bdry.integrate(phi_V);
+        }
+    }
+    }
+    //Condição de Dirichlet
+    {
+    Mesh::Iterator it = dirichlet_boundary.iterator(tag::over_vertices);
+    for(it.reset(); it.in_range(); it++){
+        Cell P = *it;
+        size_t i = numbering.at(P);
+        //Forçar valor dos nodos da fronteira para boundary_value
+        impose_value_of_unknown(matrix_A, vector_b, i, boundary_value);
     }
     }
     //Resolver sistema linear

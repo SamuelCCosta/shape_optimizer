@@ -61,8 +61,9 @@ outputs = { self, nixpkgs, flake-utils }:
                 '';
             };
 
-            python-with-packages = pkgs.python3.withPackages (ps: [
+            python-with-packages = pkgs.python314.withPackages (ps: [
                 ps.pandas
+                ps.pybind11
             ]);
 
         in

@@ -20,9 +20,11 @@ Ellipse::Ellipse(double x, double y, double A_, double B_, double C_) : A(A_), B
     //bounds checking
     double horizontal_margin = h + width;
     double vertical_margin = h + height;
+    /*
     std::cout << "x_min: " << horizontal_margin << " y_min: " << vertical_margin << std::endl;
     std::cout << "x_max: " << 1 - horizontal_margin << " y_max: " << 1 - vertical_margin << std::endl;
-    std::cout << "x: " << x << " y: " << y << std::endl;
+    std::cout << "x: " << x << " y: " << y << std::endl;*/
+
     if ((y < vertical_margin) || (x < horizontal_margin) ||
     (y > 1 - vertical_margin) || (x > 1 - horizontal_margin) ) {
         throw std::invalid_argument("Ellipse does not fit in the unit square.");
@@ -81,7 +83,7 @@ bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2){
 //provavelmente será mudado no futuro por algo com mais performance (maybe not)
 bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const {
     auto [theta1, theta2] = get_initial_thetas(e1, e2); //ponto inicial
-    const double learning_rate = 5;
+    const double learning_rate = 5.41;
     const int max_iterations = 200;
     const double tolerance_sq = 1e-10;
 
@@ -92,7 +94,7 @@ bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const
         double grad1 = 2 * dist_vec.dot(e1.derivative_at(theta1));
         double grad2 = -2 * dist_vec.dot(e2.derivative_at(theta2));
         if (grad1*grad1 + grad2*grad2 < tolerance_sq) {
-            std::cout << "número de iterações: " << i << std::endl;
+            //std::cout << "número de iterações: " << i << std::endl;
             break;
         }
         theta1 -= learning_rate * grad1;
@@ -100,14 +102,14 @@ bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const
     }
     double min_sq_dist = (e1.point_at(theta1) - e2.point_at(theta2)).squaredNorm();
     
-    std::cout << "min dist^2: " << min_sq_dist << std::endl;
-    std::cout << "h^2: " << h*h << std::endl;
+    //std::cout << "min dist^2: " << min_sq_dist << std::endl;
+    //std::cout << "h^2: " << h*h << std::endl;
     return min_sq_dist <= h * h + 1e-9;
 }
 
 std::pair<double, double> EllipseBundle::get_initial_thetas(const Ellipse& e1, const Ellipse& e2) const {
     Eigen::Vector2d center_diff = e2.center - e1.center;
-    const auto& A1 = e1.get_transform_matrix();
+    const Eigen::Matrix2d& A1 = e1.get_transform_matrix();
     const auto& A2 = e2.get_transform_matrix();
     
     Eigen::Matrix2d A1_inv = A1.inverse();
@@ -122,7 +124,7 @@ std::pair<double, double> EllipseBundle::get_initial_thetas(const Ellipse& e1, c
     return {theta1, theta2};
 }
 
-Mesh EllipseBundle::total_mesh(){
+const Mesh EllipseBundle::total_mesh() const {
     std::vector<Mesh> mesh_bundle;
     mesh_bundle.reserve(num_ellipses);
 

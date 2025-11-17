@@ -8,7 +8,7 @@ VIEW_OPTIONS = view-options.geo
 # project_dir = /cygdrive/c/Users/samue/Documents/ProjetosCPP/Seminario
 
 # compilation flags
-CFLAGS = -O3 -flto=8
+CFLAGS = -O3 -flto=8 -march=native
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FEM
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FRONTAL
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_QUOTIENT
@@ -20,10 +20,10 @@ CFLAGS := $(CFLAGS) -std=c++23 -c -Wshadow -Wall -I .
 
 PROFILE_CFLAGS = $(CFLAGS) $(PROFILE_FLAGS)
 
-PROFILE_OBJS = main.p.o maniUtils.p.o maniSolver.p.o ellipse.p.o
+PROFILE_OBJS = main.p.o maniUtils.p.o maniSolver.p.o ellipse.p.o square_solver.p.o
 PROFILE_REPORT = analysis.txt
 
-OBJS = main.o maniUtils.o maniSolver.o ellipse.o
+OBJS = main.o maniUtils.o maniSolver.o ellipse.o square_solver.o
 
 %.o: %.cpp
 	$(CC) $(CFLAGS) $^
@@ -35,8 +35,7 @@ a.out: ${OBJS}
 	$(CC) $^ -lmaniFEM -o a.out 
 
 a.out.profile: $(PROFILE_OBJS)
-	$(CC) $(PROFILE_FLAGS) $^ -L$(MANIFEM_DIR) -lmaniFEM -o a.out.profile
-
+	$(CC) $(PROFILE_FLAGS) $^ -lmaniFEM -o a.out.profile
 
 run: a.out
 	./$<

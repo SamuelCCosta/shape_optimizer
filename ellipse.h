@@ -39,7 +39,7 @@ class Ellipse {
             return mesh.value();
         }
 
-        double area(){return pi * det;}
+        const double area() const {return pi * 1/ (det * det);}
 
         const Eigen::Matrix2d& get_transform_matrix() const {
             if (!transform.has_value()){
@@ -78,12 +78,12 @@ class EllipseBundle{
             bundle.push_back(new_ellipse);
         }
 
-        void add_ellipse(Ellipse&& new_ellipse) {
+        void add(Ellipse&& new_ellipse) {
             check_intersections(new_ellipse);
             bundle.push_back(std::move(new_ellipse));
         }
 
-        double area(){
+        const double area() const {
             double total = 0;
             for (auto& ellipse : bundle){
                 total += ellipse.area();
@@ -91,7 +91,7 @@ class EllipseBundle{
             return total;
         }
 
-        Mesh total_mesh();
+        const Mesh total_mesh() const;
 
     private:
         void check_intersections(const Ellipse &new_ellipse){
