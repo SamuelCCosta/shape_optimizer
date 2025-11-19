@@ -2,14 +2,14 @@
 description = "Neoseminario + python time testing";
 
 inputs = {
-    nixpkgs.url = "github:Nixos/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
+    nixpkgs.url = "github:Nixos/nixpkgs/nixos-25.05";
 };
 
-outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+outputs = { self, nixpkgs }: {
+    devShells.x86_64-linux.default =
         let
-            pkgs = import nixpkgs { inherit system; };
+            system = "x86_64-linux";
+            pkgs = nixpkgs.legacyPackages.${system};
 
             maniFEM-cflags-list = [
                 "-O3"
@@ -61,14 +61,13 @@ outputs = { self, nixpkgs, flake-utils }:
                 '';
             };
 
-            python-with-packages = pkgs.python314.withPackages (ps: [
+            python-with-packages = pkgs.python3.withPackages (ps: [
                 ps.pandas
                 ps.pybind11
             ]);
 
         in
-        {
-        devShells.default = pkgs.mkShell {
+        pkgs.mkShell {
             packages = [
                 pkgs.gcc
                 pkgs.gnumake
@@ -82,9 +81,6 @@ outputs = { self, nixpkgs, flake-utils }:
 
             NIX_CFLAGS_COMPILE = "-I${maniFEM}/include";
             NIX_LDFLAGS = "-L${maniFEM}/lib";
-
-            gc-keep-outputs = [ maniFEM ];
         };
-        }
-    );
+};
 }
