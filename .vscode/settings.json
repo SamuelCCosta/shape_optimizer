@@ -19,6 +19,7 @@
     "terminal.integrated.defaultProfile.windows": "Cygwin (Project)",
 
     "files.associations": {
+        "flake.lock": "json",
         "fstream": "cpp",
         "array": "cpp",
         "atomic": "cpp",
@@ -93,6 +94,7 @@
         "thread": "cpp",
         "cinttypes": "cpp",
         "valarray": "cpp",
-        "sparsecore": "cpp"
+        "sparsecore": "cpp",
+        "typeindex": "cpp"
     },
 }

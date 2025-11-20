@@ -1,7 +1,12 @@
 # C++ compiler
 CC = g++
 
-GMSH_DIR = /cygdrive/c/gmsh/gmsh.exe
+GMSH_DIR = /mnt/c/gmsh/gmsh.exe
+
+#pybind
+PYBIND_INCLUDES = $(shell python3 -m pybind11 --includes)
+PYTHON_SUFFIX = $(shell python3-config --extension-suffix)
+PYTHON_LIB = square_solver$(PYTHON_SUFFIX)
 
 MESH_FILE = solution.msh
 VIEW_OPTIONS = view-options.geo
@@ -16,7 +21,7 @@ CFLAGS = -O3 -flto=8 -march=znver4
 # CFLAGS := $(CFLAGS) -DNDEBUG
 PROFILE_FLAGS = -pg -g
 
-CFLAGS := $(CFLAGS) -std=c++23 -c -Wshadow -Wall -I .
+CFLAGS := $(CFLAGS) -std=c++23 -c -Wshadow -Wall -I . -fPIC
 
 PROFILE_CFLAGS = $(CFLAGS) $(PROFILE_FLAGS)
 
@@ -25,8 +30,13 @@ PROFILE_REPORT = analysis.txt
 
 OBJS = main.o maniUtils.o maniSolver.o ellipse.o square_solver.o
 
+PY_OBJS = bindings.o maniUtils.o maniSolver.o ellipse.o square_solver.o
+
 %.o: %.cpp
 	$(CC) $(CFLAGS) $^
+
+bindings.o: bindings.cpp
+	$(CC) $(CFLAGS) $(PYBIND_INCLUDES) $< -o $@
 
 %.p.o: %.cpp
 	$(CC) $(PROFILE_CFLAGS) -c $^ -o $@
@@ -37,11 +47,22 @@ a.out: ${OBJS}
 a.out.profile: $(PROFILE_OBJS)
 	$(CC) $(PROFILE_FLAGS) $^ -lmaniFEM -o a.out.profile
 
+$(PYTHON_LIB): $(PY_OBJS)
+	$(CC) -shared -o $@ $^ -lmaniFEM
+
+pylib: $(PYTHON_LIB)
+
+stubgen: 
+	PYTHONPATH=. pybind11-stubgen square_solver -o .
+
+run_py: $(PYTHON_LIB)
+	python3 main.py
+
 run: a.out
 	./$<
 
 clean:
-	rm -f *.o *.p.o a.out.profile a.out test.out gmon.out analysis.txt
+	rm -f *.o *.p.o *.so a.out.profile a.out test.out gmon.out analysis.txt
 
 clean_msh:
 	rm -f *.msh
@@ -76,4 +97,4 @@ profile-run: a.out.profile
 
 .SECONDARY:
 
-.PHONY: run clean reset clean_msh clean_all show_mesh profile profile_run
+.PHONY: run clean reset clean_msh clean_all show_mesh profile profile_run run_py pylib stubgen

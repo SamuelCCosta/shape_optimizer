@@ -17,6 +17,7 @@ outputs = { self, nixpkgs }: {
                 "-c"
                 "-Wshadow"
                 "-Wall"
+                "-fPIC"
                 "-I ."
                 "-I ${pkgs.eigen}/include/eigen3"
                 "-DOMIT_OBSOLETE_CODE"
@@ -64,6 +65,7 @@ outputs = { self, nixpkgs }: {
             python-with-packages = pkgs.python3.withPackages (ps: [
                 ps.pandas
                 ps.pybind11
+                ps.pybind11-stubgen
             ]);
 
         in
@@ -78,6 +80,10 @@ outputs = { self, nixpkgs }: {
           
             CPLUS_INCLUDE_PATH = "${maniFEM}/include:${pkgs.eigen}/include/eigen3";
             LIBRARY_PATH = "${maniFEM}/lib";
+
+            shellHook = ''
+                export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:$(python3 -c "import pybind11; print(pybind11.get_include())")
+            '';
 
             NIX_CFLAGS_COMPILE = "-I${maniFEM}/include";
             NIX_LDFLAGS = "-L${maniFEM}/lib";

@@ -18,5 +18,4 @@ using namespace maniFEM;
 inline constexpr int n_segments(double l){ return std::ceil(l/h); }
 
 double objective(const Function heat_sources, const Function base_temp, const EllipseBundle& ellipses, bool export_mesh);
-
 #endif

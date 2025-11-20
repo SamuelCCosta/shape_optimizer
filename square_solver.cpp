@@ -1,6 +1,11 @@
 #include "square_solver.h"
 
 double objective(const Function heat_sources, const Function base_temp, const EllipseBundle& ellipses, const bool export_mesh){
+    Manifold fallback(tag::non_existent);
+    if (!Manifold::working.exists()) {
+        fallback = Manifold(tag::Euclid, tag::of_dim, 2);
+        Manifold::working.build_coordinate_system(tag::Lagrange, tag::of_degree, 1);
+    }
     Manifold& active_manifold = Manifold::working;
     Function xy = active_manifold.coordinates();
     Function x = xy[0], y = xy[1];

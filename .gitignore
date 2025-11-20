@@ -5,3 +5,4 @@
 *.msh
 *.p.o
 .direnv/
+*.so
