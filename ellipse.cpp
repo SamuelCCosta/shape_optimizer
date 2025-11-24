@@ -71,10 +71,10 @@ bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2){
     double e2_r_x = x2 + e2.width;
     double e2_t_y = y2 + e2.height;
 
-    if (e1_r_x < e2_l_x || //e1 à esquerda de e2
-        e2_r_x < e1_l_x || //e1 à direita de e2
-        e1_t_y < e2_b_y || //e1 abaixo de e2
-        e2_t_y < e1_b_y)   //e1 acima de e2
+    if (e1_r_x + h < e2_l_x || //e1 à esquerda de e2
+        e2_r_x + h < e1_l_x || //e1 à direita de e2
+        e1_t_y + h < e2_b_y || //e1 abaixo de e2
+        e2_t_y + h < e1_b_y)   //e1 acima de e2
     {return false;}
     
     return robust_intersect(e1,e2);
@@ -82,6 +82,14 @@ bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2){
 
 //provavelmente será mudado no futuro por algo com mais performance (maybe not)
 bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const {
+    //Check if centers are inside the other ellipse
+    double x1 = e1.center[0], y1 = e1.center[1];
+    double x2 = e2.center[0], y2 = e2.center[1];
+    auto value = [&](const Ellipse& e){return e.A * (x1-x2) * (x1-x2) + 2 * e.B * (x1-x2) * (y1-y2) + e.C * (y1-y2) * (y1-y2);};
+    if ( value(e2) < 1 || //centro de e1 dentro de e2
+         value(e1) < 1 )  //centro de e2 em e1
+    {return true;}
+    
     auto [theta1, theta2] = get_initial_thetas(e1, e2); //ponto inicial
     const double learning_rate = 5.41;
     const int max_iterations = 200;
@@ -104,13 +112,13 @@ bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const
     
     //std::cout << "min dist^2: " << min_sq_dist << std::endl;
     //std::cout << "h^2: " << h*h << std::endl;
-    return min_sq_dist <= h * h + 1e-9;
+    return min_sq_dist <= h * h;
 }
 
 std::pair<double, double> EllipseBundle::get_initial_thetas(const Ellipse& e1, const Ellipse& e2) const {
     Eigen::Vector2d center_diff = e2.center - e1.center;
     const Eigen::Matrix2d& A1 = e1.get_transform_matrix();
-    const auto& A2 = e2.get_transform_matrix();
+    const Eigen::Matrix2d& A2 = e2.get_transform_matrix();
     
     Eigen::Matrix2d A1_inv = A1.inverse();
     Eigen::Matrix2d A2_inv = A2.inverse();

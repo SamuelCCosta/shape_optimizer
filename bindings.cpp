@@ -16,7 +16,6 @@ PYBIND11_MODULE(square_solver, m) {
 
     py::class_<EllipseBundle>(m, "EllipseBundle")
         .def(py::init<>())
-        // Use a lambda to disambiguate the 'add' overload
         .def("add", [](EllipseBundle &self, const Ellipse &e) {
             self.add(e);
         }, py::arg("ellipse"))
