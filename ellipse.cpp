@@ -3,7 +3,8 @@
 #include <cmath>
 
 // A(x-xc)^2 + 2B(x-xc)(y-yc) + C(y-yc)^2 = 1
-Ellipse::Ellipse(double x, double y, double A_, double B_, double C_) : A(A_), B(B_), C(C_) {
+Ellipse::Ellipse(double x, double y, double A_, double B_, double C_) : A(A_), B(B_), C(C_),
+    representation(maniFEM::tag::non_existent), mesh(maniFEM::tag::non_existent) {
     this-> det = A*C - B*B;
     if (A < 0 || det < 0){ 
         throw std::invalid_argument("The matrix is not positive definite");
@@ -29,6 +30,10 @@ Ellipse::Ellipse(double x, double y, double A_, double B_, double C_) : A(A_), B
     (y > 1 - vertical_margin) || (x > 1 - horizontal_margin) ) {
         throw std::invalid_argument("Ellipse does not fit in the unit square.");
     }
+
+    Eigen::Matrix2d M_inv = M.inverse();
+    Eigen::LLT<Eigen::Matrix2d> llt_inv(M_inv);
+    transform = llt_inv.matrixL();
 }
 
 void Ellipse::meshify() const {
@@ -38,11 +43,11 @@ void Ellipse::meshify() const {
     Function x = xy[0], y = xy[1];
 
     double xc = center[0], yc = center[1];
-    if (! representation.has_value()){
+    if (!representation.exists()){
         Function implicit_eq = A * (x-xc) * (x-xc) + 2 * B * (x-xc) * (y-yc) + C * (y-yc) * (y-yc);
-        representation.emplace(RR2.implicit(implicit_eq == 1));
+        representation = RR2.implicit(implicit_eq == 1);
     }
-    representation->set_as_working_manifold();
+    representation.set_as_working_manifold();
 
     Eigen::Vector2d starting_point = point_at(0);
 
@@ -54,13 +59,19 @@ void Ellipse::meshify() const {
 
     Cell start(tag::vertex, tag::of_coords, {x_0,y_0}); //extremidade equivalente a (a,0)
     std::vector<double> direction = {x_dir, y_dir}; //direção equivalente a (0,-1)
-    mesh.emplace(Mesh::Build(tag::frontal).entire_manifold().start_at(start).towards(direction).desired_length(h));
+    mesh = Mesh::Build(tag::frontal).entire_manifold().start_at(start).towards(direction).desired_length(h);
 }
 
 bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2){
-    //b = bottom, t = top, l = left, r = right
     double x1 = e1.center[0], y1 = e1.center[1];
     double x2 = e2.center[0], y2 = e2.center[1];
+
+    double val2 = e2.A*(x1-x2)*(x1-x2) + 2*e2.B*(x1-x2)*(y1-y2) + e2.C*(y1-y2)*(y1-y2);
+    if (val2 <= 1.0) return true; //e1 center inside e2
+    double val1 = e1.A*(x1-x2)*(x1-x2) + 2*e1.B*(x1-x2)*(y1-y2) + e1.C*(y1-y2)*(y1-y2);
+    if (val1 <= 1.0) return true; //e2 center inside e1
+
+    //b = bottom, t = top, l = left, r = right
     double e1_l_x = x1 - e1.width; 
     double e1_b_y = y1 - e1.height;
     double e1_r_x = x1 + e1.width;
@@ -80,16 +91,8 @@ bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2){
     return robust_intersect(e1,e2);
 }
 
-//provavelmente será mudado no futuro por algo com mais performance (maybe not)
+//provavelmente será mudado no futuro por newton raphson
 bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const {
-    //Check if centers are inside the other ellipse
-    double x1 = e1.center[0], y1 = e1.center[1];
-    double x2 = e2.center[0], y2 = e2.center[1];
-    auto value = [&](const Ellipse& e){return e.A * (x1-x2) * (x1-x2) + 2 * e.B * (x1-x2) * (y1-y2) + e.C * (y1-y2) * (y1-y2);};
-    if ( value(e2) < 1 || //centro de e1 dentro de e2
-         value(e1) < 1 )  //centro de e2 em e1
-    {return true;}
-    
     auto [theta1, theta2] = get_initial_thetas(e1, e2); //ponto inicial
     const double learning_rate = 5.41;
     const int max_iterations = 200;
@@ -117,11 +120,9 @@ bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const
 
 std::pair<double, double> EllipseBundle::get_initial_thetas(const Ellipse& e1, const Ellipse& e2) const {
     Eigen::Vector2d center_diff = e2.center - e1.center;
-    const Eigen::Matrix2d& A1 = e1.get_transform_matrix();
-    const Eigen::Matrix2d& A2 = e2.get_transform_matrix();
     
-    Eigen::Matrix2d A1_inv = A1.inverse();
-    Eigen::Matrix2d A2_inv = A2.inverse();
+    Eigen::Matrix2d A1_inv = e1.transform.inverse();
+    Eigen::Matrix2d A2_inv = e2.transform.inverse();
 
     Eigen::Vector2d v_target1 = A1_inv * center_diff;
     double theta1 = std::atan2(v_target1.y(), v_target1.x());

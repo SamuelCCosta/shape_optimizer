@@ -35,7 +35,8 @@
            "name": "home manager",
             "compilerPath": "g++",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/**",
+                "/nix/store/jd20rkmqmkfkcvk2wl2lmzz7acq4svlr-python3-3.12.12/include/python3.12"
             ],
             "defines": [],
             "cStandard": "c17",

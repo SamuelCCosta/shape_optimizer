@@ -1,6 +1,6 @@
 #include "square_solver.h"
 
-double objective(const Function heat_sources, const Function base_temp, const EllipseBundle& ellipses, const bool export_mesh){
+double objective(const double heat_sources, const double base_temp, const EllipseBundle& ellipses, const bool export_mesh){
     Manifold fallback(tag::non_existent);
     if (!Manifold::working.exists()) {
         fallback = Manifold(tag::Euclid, tag::of_dim, 2);

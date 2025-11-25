@@ -21,11 +21,7 @@ PYBIND11_MODULE(square_solver, m) {
         }, py::arg("ellipse"))
         .def("area", &EllipseBundle::area);
 
-    m.def("objective", [](double heat_sources, double base_temp, const EllipseBundle& ellipses, bool mesh) {
-        maniFEM::Function h_func = heat_sources;
-        maniFEM::Function b_func = base_temp;
-        return objective(h_func, b_func, ellipses, mesh);
-    }, 
+    m.def("objective", &objective,
     py::arg("heat_source"), 
     py::arg("base_temp"), 
     py::arg("ellipses"), 

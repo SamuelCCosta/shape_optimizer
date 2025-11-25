@@ -10,10 +10,9 @@ PYTHON_LIB = square_solver$(PYTHON_SUFFIX)
 
 MESH_FILE = solution.msh
 VIEW_OPTIONS = view-options.geo
-# project_dir = /cygdrive/c/Users/samue/Documents/ProjetosCPP/Seminario
 
 # compilation flags
-CFLAGS = -O3 -flto=8 #-march=znver4
+CFLAGS = -O3 -flto=8 -march=znver4
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FEM
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FRONTAL
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_QUOTIENT
