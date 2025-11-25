@@ -21,14 +21,10 @@ Ellipse::Ellipse(double x, double y, double A_, double B_, double C_) : A(A_), B
     //bounds checking
     double horizontal_margin = h + width;
     double vertical_margin = h + height;
-    /*
-    std::cout << "x_min: " << horizontal_margin << " y_min: " << vertical_margin << std::endl;
-    std::cout << "x_max: " << 1 - horizontal_margin << " y_max: " << 1 - vertical_margin << std::endl;
-    std::cout << "x: " << x << " y: " << y << std::endl;*/
 
     if ((y < vertical_margin) || (x < horizontal_margin) ||
     (y > 1 - vertical_margin) || (x > 1 - horizontal_margin) ) {
-        throw std::invalid_argument("Ellipse does not fit in the unit square.");
+        throw std::invalid_argument("Ellipse does not fit in the domain.");
     }
 
     Eigen::Matrix2d M_inv = M.inverse();

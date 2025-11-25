@@ -19,3 +19,7 @@ try:
 
 except ValueError as e:
     print(f"Error: {e}")
+
+
+#multiprocessing.set_start_method('spawn')
+#comportamentos estranhos com fork (default do linux)

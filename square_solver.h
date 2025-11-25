@@ -15,18 +15,22 @@
 
 using namespace maniFEM;
 
-inline constexpr int n_segments(double l){ return std::ceil(l/h); }
+inline int n_segments(double l){ return std::ceil(l/h); }
 
 double objective(const double heat_sources, const double base_temp, const EllipseBundle& ellipses, bool export_mesh);
 
 //Work in Progress
-/*
 class SquareSolver {
     public:
         double x_max, y_max, MW_x, ME_x, h;
+        double heat_sources, base_temp;
         size_t num_ellipses;
+        Mesh sources, south, square_boundary, north;
+        const bool export_mesh;
+        Manifold ambient;
 
-        SquareSolver(double x, double y, double MW, double ME, double h, size_t n_ellipses);
-        void solve();
-}; */
+        SquareSolver(const double x, const double y, const double MW, const double ME, const double heat_sources_,
+            const double base_temp_, const double h, const size_t n_ellipses, const bool export_mesh);
+        double solve(EllipseBundle& bundle);
+};
 #endif
