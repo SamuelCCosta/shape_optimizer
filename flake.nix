@@ -66,6 +66,7 @@ outputs = { self, nixpkgs }: {
                 ps.pandas
                 ps.pybind11
                 ps.pybind11-stubgen
+                ps.matplotlib
             ]);
 
         in

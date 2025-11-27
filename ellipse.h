@@ -3,7 +3,7 @@
 
 #include "maniFEM.h"
 #include "constants.h"
-#include <optional>
+#include "domain_config.h"
 #include <numbers>
 #include <Eigen/Dense>
 
@@ -25,16 +25,15 @@ class alignas(256) Ellipse {
         Eigen::Vector2d center;
         Eigen::Matrix2d M;
         Eigen::Matrix2d transform; //M^-1 = A * A^T <- matriz A
-        mutable Manifold representation;
         mutable Mesh mesh;
 
         Ellipse(double x_i, double y_i, double A_i, double B_i, double C_i);
 
-        void meshify() const;
+        void meshify(const double h) const;
 
-        Mesh get_mesh() const {
+        Mesh get_mesh(const double h) const {
             if (!mesh.exists()){
-                meshify();
+                meshify(h);
             }
             return mesh;
         }
@@ -54,8 +53,9 @@ class alignas(256) Ellipse {
 class EllipseBundle{
     public:
         std::vector<Ellipse> bundle;
-        
-        EllipseBundle(){bundle.reserve(num_ellipses);}
+        const DomainConfig cfg;
+
+        EllipseBundle(const DomainConfig& Cfg) : cfg(Cfg) {bundle.reserve(cfg.num_ellipses);}
 
         void add(const Ellipse &new_ellipse){
             check_intersections(new_ellipse);
@@ -79,15 +79,30 @@ class EllipseBundle{
 
     private:
         void check_intersections(const Ellipse &new_ellipse){
+            if (!is_inside(new_ellipse)){
+                throw std::invalid_argument("Ellipse does not fit in the domain");
+            }
             for (auto & ellipse : bundle){
                 if (intersects(new_ellipse, ellipse)){ 
                     throw std::invalid_argument("Ellipses don't have enough gap");
                 };
             }
-        };
+        }
 
+        bool is_inside(const Ellipse& e1){//bounds checking
+            double horizontal_margin = cfg.h + e1.width;
+            double vertical_margin = cfg.h + e1.height;
+            double x = e1.center[0], y = e1.center[1];
+
+            if ((y < vertical_margin) || (x < horizontal_margin) ||
+            (y > cfg.y_max - vertical_margin) || (x > cfg.x_max - horizontal_margin) ) {
+                return false;
+            }
+            return true;
+        }
         bool intersects(const Ellipse &e1, const Ellipse &e2);
         bool robust_intersect(const Ellipse &e1, const Ellipse &e2) const;
+        bool new_robust_intersect(const Ellipse& e1, const Ellipse& e2) const;
         std::pair<double, double> get_initial_thetas(const Ellipse& e1, const Ellipse& e2) const;
 };
 #endif
