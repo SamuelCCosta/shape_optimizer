@@ -26,7 +26,7 @@ outputs = { self, nixpkgs }: {
                 # "-DMANIFEM_NO_FEM"
                 # "-DMANIFEM_NO_FRONTAL"
                 # "-DMANIFEM_NO_QUOTIENT"
-                # "-DMANIFEM_COLLECT_CM"
+                "-DMANIFEM_COLLECT_CM"
                 # "-DNDEBUG"
             ];
 

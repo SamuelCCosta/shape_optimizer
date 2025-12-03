@@ -19,26 +19,19 @@ class WorkingManifold{
 };
 
 
-class alignas(256) Ellipse {
+class Ellipse {
     public:
         double height, width, A, B, C, det;
         Eigen::Vector2d center;
         Eigen::Matrix2d M;
         Eigen::Matrix2d transform; //M^-1 = A * A^T <- matriz A
-        mutable Mesh mesh;
 
         Ellipse(double x_i, double y_i, double A_i, double B_i, double C_i);
 
-        void meshify(const double h) const;
+        Mesh get_mesh(const double h, std::list<Manifold>& repository) const;
+        Mesh manual_get_mesh(const double h) const;
 
-        Mesh get_mesh(const double h) const {
-            if (!mesh.exists()){
-                meshify(h);
-            }
-            return mesh;
-        }
-
-        const double area() const {return pi * 1/ (det * det);}
+        double area() const {return pi * 1 / (det * det);}
 
         Eigen::Vector2d point_at(double theta) const {
             return center + transform * Eigen::Vector2d(std::cos(theta), std::sin(theta));
@@ -46,6 +39,11 @@ class alignas(256) Ellipse {
 
         Eigen::Vector2d derivative_at(double theta) const {
             return transform * Eigen::Vector2d(-std::sin(theta), std::cos(theta));
+        }
+
+        double evaluate_at(const Eigen::Vector2d point) const {
+            Eigen::Vector2d d = point - center;
+            return d.dot(M * d);
         }
 };
 
@@ -75,7 +73,8 @@ class EllipseBundle{
             return total;
         }
 
-        const Mesh total_mesh() const;
+        Mesh total_mesh(std::list<Manifold>& repository) const;
+        Mesh manual_total_mesh() const;
 
     private:
         void check_intersections(const Ellipse &new_ellipse){
@@ -89,7 +88,7 @@ class EllipseBundle{
             }
         }
 
-        bool is_inside(const Ellipse& e1){//bounds checking
+        bool is_inside(const Ellipse& e1){ //bounds checking
             double horizontal_margin = cfg.h + e1.width;
             double vertical_margin = cfg.h + e1.height;
             double x = e1.center[0], y = e1.center[1];
@@ -100,9 +99,9 @@ class EllipseBundle{
             }
             return true;
         }
+
         bool intersects(const Ellipse &e1, const Ellipse &e2);
         bool robust_intersect(const Ellipse &e1, const Ellipse &e2) const;
-        bool new_robust_intersect(const Ellipse& e1, const Ellipse& e2) const;
         std::pair<double, double> get_initial_thetas(const Ellipse& e1, const Ellipse& e2) const;
 };
 #endif

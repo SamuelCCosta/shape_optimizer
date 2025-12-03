@@ -11,12 +11,12 @@ PYTHON_LIB = square_solver$(PYTHON_SUFFIX)
 MESH_FILE = solution.msh
 VIEW_OPTIONS = view-options.geo
 
-# compilation flags
+# compilation flags (do NOT forget to match with the ones that maniFEM was built with)
 CFLAGS = -O3 -flto=8 -march=znver4
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FEM
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FRONTAL
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_QUOTIENT
-# CFLAGS := $(CFLAGS) -DMANIFEM_COLLECT_CM
+CFLAGS := $(CFLAGS) -DMANIFEM_COLLECT_CM
 # CFLAGS := $(CFLAGS) -DNDEBUG
 PROFILE_FLAGS = -pg -g
 

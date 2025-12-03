@@ -3,13 +3,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 # The input list provided
-raw_data = [ 
-  1.22818673e-01,  5.83517766e-01,  1.12806305e+02,  1.21366115e+01, 8.96040620e+01,
-  5.91629030e-01,  6.40340026e-01,  2.04159081e+02, -4.35976084e+01, 1.12926963e+02,
-  5.42716448e-01,  7.59968556e-01,  1.00550021e+02, -1.30988244e+01, 1.17660615e+02,
-  3.40343817e-01,  1.44695342e-01,  9.75079343e+01, -1.34730584e+01,  2.13321885e+02]
+raw_data = [0.09846759459531274, 0.8779145670536423, 360.2709520038292, 112.38584975360911, 393.63233210725235, 0.5056591695680825, 0.3407869436316506, 162.84307818263258, -62.60305881718613, 274.44694581695825, 0.766743884499224, 0.46129767698468077, 186.3704649771612, -144.589190636172, 227.2284762469888, 0.7819328169643374, 0.6512709822028184, 309.4108476099627, 195.55068464492143, 338.3886609589487]
 
-#as elipses 2 e 3 intersetam *e* passam os testes
 
 def get_ellipse_parameters(data):
     """
@@ -63,11 +58,13 @@ if __name__ == '__main__':
     results = get_ellipse_parameters(raw_data)
 
     # Print results
-    print(f"{'Major (a)':<12} | {'Minor (b)':<12} | {'Theta (rad)':<12} | {'Center (x, y)'}")
-    print("-" * 65)
+    print_res = False
+    if print_res:
+        print(f"{'Major (a)':<12} | {'Minor (b)':<12} | {'Theta (rad)':<12} | {'Center (x, y)'}")
+        print("-" * 65)
 
-    for res in results:
-        print(f"{res['a']:<12.6f} | {res['b']:<12.6f} | {res['theta']:<12.6f} | {res['center']}")
+        for res in results:
+            print(f"{res['a']:<12.6f} | {res['b']:<12.6f} | {res['theta']:<12.6f} | {res['center']}")
 
     fig, ax = plt.subplots(figsize=(6, 6))
 
@@ -99,6 +96,8 @@ if __name__ == '__main__':
         # Plot the center point for reference
         ax.plot(p['center'][0], p['center'][1], 'k+', markersize=5)
 
+    #ax.plot(0.428928, 0.442505, 'k+', markersize=5)
+    #ax.plot(0.427547, 0.492422, 'k+', markersize=5)
     plt.title('Visualized Ellipses')
     plt.xlabel('X')
     plt.ylabel('Y')

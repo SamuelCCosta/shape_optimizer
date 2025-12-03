@@ -30,7 +30,6 @@ PYBIND11_MODULE(square_solver, m) {
     py::class_<Ellipse>(m, "Ellipse")
         .def(py::init<double, double, double, double, double>(),
              py::arg("x_i"), py::arg("y_i"), py::arg("A_i"), py::arg("B_i"), py::arg("C_i"))
-        .def("meshify", &Ellipse::meshify)
         .def("area", &Ellipse::area)
         .def("point_at", &Ellipse::point_at)
         .def("derivative_at", &Ellipse::derivative_at)

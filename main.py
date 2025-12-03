@@ -2,7 +2,7 @@ from square_solver import *
 import numpy as np
 import math
 import random
-import gc
+import signal
 
 #multiprocessing.set_start_method('spawn')
 #provavelmente comportamentos estranhos com fork (default do linux)
@@ -10,26 +10,44 @@ import gc
 h = 0.02
 heat_source = 10.0
 base_temp = 0.0
-penalization = 10.0
+penalization = 30.0
 num_ellipses = 4
 
 cfg = DomainConfig(1.0, 1.0, 0.3, 0.7, h, num_ellipses)
 
-def cost(params, sq_solver : SquareSolver):    
+sqs = SquareSolver(cfg, heat_source, base_temp, penalization, False)
+
+class TimeoutError(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Timed out!")
+
+def cost(params, sq_solver : SquareSolver):
+    signal.signal(signal.SIGALRM, timeout_handler)
     ellipses = EllipseBundle(cfg)
     n_param = 5
-
+    signal.alarm(2) # 2 seconds
     try:
         for i in range(num_ellipses):
             idx = i * n_param
             ellipses.add(Ellipse(params[idx], params[idx + 1], params[idx + 2], params[idx + 3], params[idx + 4]))
-        
-        return sq_solver.solve(ellipses)
-        
-    except ValueError:
+        result = sq_solver.solve(ellipses)
+        signal.alarm(0)
+        return result
+    except ValueError: #configuração inválida
+        signal.alarm(0)
+        return float('inf')
+    except TimeoutError: #timeout devido à malha frontal
+        print(f'Timeout with parameters {params}')
+        return float('inf')
+    except: #unrelated (por exemplo FiniteElement a falhar)
+        signal.alarm(0)
+        print(f'Something went wrong with parameters {params}')
         return float('inf')
 
-def simmulated_annealing(sq_solver : SquareSolver, initial_params, scales, initial_temp = 100.0, cooling_rate = 0.90, max_iter = 1000):
+
+def simmulated_annealing(sq_solver : SquareSolver, initial_params, scales, initial_temp, cooling_rate, max_iter):
     # Initialization
     current_params = np.array(initial_params, dtype=float)
     current_cost = cost(initial_params, sq_solver)
@@ -43,9 +61,12 @@ def simmulated_annealing(sq_solver : SquareSolver, initial_params, scales, initi
 
     failed = 0 #track how many failed configurations happened
     for i in range(max_iter):
+        if i % 10 == 0:
+            print(f'i = {i}')
+
         noise = np.random.normal(0, 1.0, num_ellipses * 5) * scales
         neigh_params = current_params + noise
-        print(neigh_params)
+        #print(neigh_params.tolist())
         neigh_cost = cost(neigh_params, sq_solver)
 
         #definir probabilidades para o teste
@@ -72,37 +93,33 @@ def simmulated_annealing(sq_solver : SquareSolver, initial_params, scales, initi
                 best_cost = current_cost
                 print(f'Best cost found: {best_cost:.6f} at temp = {temp:.2f}')
         
-        #cool down
-        temp *= cooling_rate
+        #cool down if config was valid
+        if neigh_cost != float('inf'):
+            temp *= cooling_rate
+
         if temp < 1e-8:
             i_count = i+1
             print(f'i = {i}, failed = {failed}, fail% = {failed/i_count * 100:.2f}%')
             break
     
-    print(f'i = {max_iter}, failed = {failed}, fail% = {failed/max_iter * 100:.2f}')
+    #print(f'i = {max_iter}, failed = {failed}, fail% = {failed/max_iter * 100:.2f}')
     return best_params
 
 
 if __name__ == "__main__":
-    initial_ellipses = [ 
-        4.29481844e-01, 6.11469557e-01, 1.19159636e+02,  5.89029810e-01, 8.84212799e+01,
-        5.27868318e-01, 4.12821412e-01, 2.29649199e+02, -2.40292652e+01, 9.25764037e+01,
-        4.23352361e-01, 8.60151240e-01, 8.40236125e+01, -2.27213249e+01, 1.16611590e+02,
-        5.20663979e-01, 9.53702110e-02, 1.09547987e+02, -2.83772329e+01, 2.08775829e+02]
-
-    sqs = SquareSolver(cfg, heat_source, base_temp, penalization, False)
+    initial_ellipses = [   0.53446306,    0.50259374,  243.77396884,  -33.96889496,  261.82802112,
+    0.42235164,    0.70059529,  233.99220896,  -43.95489961,  288.09370986,
+    0.56719944,    0.34218724,  289.65241533, -106.94255163,  203.10652993,
+    0.46513083,    0.8759024,   208.72228596,   71.36566829,  130.41681181]
 
     scales = np.array([0.05, 0.05, 5.0, 5.0, 5.0] * num_ellipses, dtype=float)
-    best_params = simmulated_annealing(sqs, initial_ellipses, scales, 100, 0.95, 1000)
-    
-    #Só um SquareSolver pode estar ativo (por processo)
-    del sqs
-    gc.collect()
+    best_params = simmulated_annealing(sqs, initial_ellipses, scales, 250, 0.98, 5000)
 
-    print(best_params)
-    sqs_print = SquareSolver(cfg, heat_source, base_temp, penalization, True)
-    cost(best_params, sqs_print)
-    
+    print('Best parameters:')
+    print(best_params.tolist())
+    print(f'Objective: {cost(best_params,sqs)}')
+
+    #PROBLEMA: square_solver não quer fazer mais que uma resolução
 
 
 

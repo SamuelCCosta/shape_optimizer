@@ -21,9 +21,9 @@ class SquareSolver {
         DomainConfig cfg;
         double heat_sources, base_temp;
         double penalization;
+        Mesh sources, south, square_boundary, north;
         const bool export_mesh;
         Manifold ambient;
-        Mesh north, south, sources, square_boundary;
 
         SquareSolver(DomainConfig cfg, const double heat_sources, const double base_temp, const double penalization, const bool export_mesh);
         double solve(EllipseBundle& bundle);
