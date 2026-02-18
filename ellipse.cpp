@@ -20,6 +20,16 @@ Ellipse::Ellipse(double x, double y, double A_, double B_, double C_) : A(A_), B
     Eigen::Matrix2d M_inv = M.inverse();
     Eigen::LLT<Eigen::Matrix2d> llt_inv(M_inv);
     transform = llt_inv.matrixL();
+
+    //eccentricity check (if too eccentric, raise error)
+    double trace = A + C;
+    double discriminant = std::sqrt(trace * trace - 4 * det);
+    double lambda_max = (trace + discriminant) / 2.0;
+    double lambda_min = (trace - discriminant) / 2.0;
+    double ecc2 = 1.0 - lambda_min/lambda_max;
+    if (ecc2 > 0.93 * 0.93) {
+        throw std::invalid_argument("Eccentricity > 0.93");
+    }
 }
 
 Mesh Ellipse::get_mesh(const double h, std::list<Manifold>& repository) const {
@@ -54,11 +64,17 @@ Mesh Ellipse::get_mesh(const double h, std::list<Manifold>& repository) const {
 }
 
 Mesh Ellipse::manual_get_mesh(const double h) const {
-    double major = transform.col(0).norm();
-    double minor = transform.col(1).norm();
+    double trace = A + C;
+    double discriminant = std::sqrt(trace * trace - 4 * det);
+    double lambda_max = (trace + discriminant) / 2.0;
+    double lambda_min = (trace - discriminant) / 2.0;
+    double major = 1.0 / std::sqrt(lambda_min);
+    double minor = 1.0 / std::sqrt(lambda_max);
+    //double major = transform.col(0).norm();
+    //double minor = transform.col(1).norm();
     
-    double h_lam = std::pow(major - minor, 2) / std::pow(major + minor, 2);
-    double perimeter = pi * (major + minor) * (1 + 3*h_lam/(10 + std::sqrt(4 - 3*h_lam)));
+    double h_lam = (major - minor) * (major - minor) / (major + minor) * (major + minor);
+    double perimeter = pi * (major + minor) * (1 + 3 * h_lam / (10 + std::sqrt(4 - 3 * h_lam)));
     
     size_t n_segments = std::ceil(perimeter / h);
 
@@ -118,7 +134,7 @@ bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2){
         e2_r_x + cfg.h < e1_l_x || //e1 à direita de e2
         e1_t_y + cfg.h < e2_b_y || //e1 abaixo de e2
         e2_t_y + cfg.h < e1_b_y)   //e1 acima de e2
-    {return false;}
+    { return false; }
     
     return robust_intersect(e1,e2);
 }
@@ -201,11 +217,11 @@ bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const
 
         // calculate Hessian matrix
         // H00 = P1' P1' + D P1''
-        double H00 = Pp1.squaredNorm() - D.dot(Ppp1);
+        double H00 = Pp1.squaredNorm() + D.dot(Ppp1);
         // H01 = - P1' P2'
         double H01 = -Pp1.dot(Pp2);
-        // H11 = - P2' P2' + D P2''
-        double H11 = Pp2.squaredNorm() + D.dot(Ppp2);
+        // H11 = P2' P2' - D P2''
+        double H11 = Pp2.squaredNorm() - D.dot(Ppp2);
 
         double det = H00 * H11 - H01 * H01;
 

@@ -14,8 +14,11 @@ void objective_ellipses(){
     SquareSolver sqs = SquareSolver(cfg, heat_source, base_temp, penalization, export_mesh);
     
     for(int i = 0; i < 1; i++){
-        Ellipse circle(0.5, 0.5, 3, 0, 3);
-        circle.get_mesh(h);
+        EllipseBundle ellipses(cfg);
+
+
+        double value = sqs.solve(ellipses);
+        std::cout << "Objective: " << value << std::endl;         
     }
 }
 
@@ -31,3 +34,6 @@ int main(){
     std::cout << "Execution time: " << duration.count() << " milliseconds" << std::endl;
     return 0;
 }
+
+// para h = 0.02, o código é executado em ~170ms (Ryzen 5 7600)
+// sem escrever os ficheiros .msh, demora ~100ms

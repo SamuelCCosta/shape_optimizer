@@ -6,7 +6,7 @@ using namespace maniFEM;
 
 //No caso de condições de fronteira de Dirichlet
 void impose_value_of_unknown
-( Eigen::SparseMatrix < double >& matrix_A, Eigen::VectorXd& vector_b,
+( Eigen::SparseMatrix<double>& matrix_A, Eigen::VectorXd& vector_b,
   const size_t i, const double val)
 {	assert ( ! matrix_A .IsRowMajor );
 	size_t size_matrix = matrix_A .innerSize();

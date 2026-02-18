@@ -45,6 +45,8 @@ double SquareSolver::solve(EllipseBundle& bundle){
     
     std::map<Cell, size_t> numbering = create_node_numbering(domain, degree);
 
+    //domain.export_to_file(tag::gmsh, "domain.msh");
+
     Eigen::VectorXd solution = build_laplace_solution(base_temp, heat_sources, domain, south, sources, numbering);
     
     //função objetivo
