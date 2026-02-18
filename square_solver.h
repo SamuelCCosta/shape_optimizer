@@ -2,11 +2,7 @@
 #define SQUARE_SOLVER_H
 
 #include "maniFEM.h"
-#include "maniUtils.h"
-#include "maniSolver.h"
 #include "ellipse.h"
-#include "constants.h"
-#include "domain_config.h"
 
 #include <cmath>
 #include <fstream>
@@ -18,14 +14,37 @@ using namespace maniFEM;
 
 class SquareSolver {
     public:
-        DomainConfig cfg;
-        double heat_sources, base_temp;
-        double penalization;
-        const bool export_mesh;
-        Manifold ambient;
-        Mesh north, south, sources, square_boundary;
+        double x_max, y_max, MW_x, ME_x;
+        double h;
+        double heat_sources, base_temp; //boundary conditions
+        double penalization; //objective funcional penalization on area
+        const bool export_domain;
+        const bool export_result;
+        Manifold ambient; //R^2
+        Mesh north; //objective funcional calculation
+        Mesh south; //Dirichlet boundary condition
+        Mesh sources; //Neumann boundary condition
+        Mesh square_boundary; //Domain construction
 
-        SquareSolver(DomainConfig cfg, const double heat_sources, const double base_temp, const double penalization, const bool export_mesh);
-        double solve(EllipseBundle& bundle);
+        SquareSolver(std::map<std::string, double> &geometric_config, const double h_param, const double heat_srcs,
+            const double base_tmp, const double pen, const bool export_dom, const bool export_res);
+        
+
+        // returns the objective functional value
+        double solve(EllipseBundle &bundle);
+
+    private:
+        std::map<Cell, size_t> create_numbering(const Mesh &domain);
+
+        //specialization for constant functions
+        Eigen::VectorXd build_laplace_solution(const Mesh &domain, const std::map<Cell,size_t> &numbering);
+
+        void impose_value_of_unknown(Eigen::SparseMatrix<double> &matrix_A, 
+        Eigen::VectorXd &vector_b, const size_t cell_id, const double val);
+
+        double objective_no_penalty(const Eigen::VectorXd &solution, const std::map<Cell,size_t> &numbering);
+
+        int n_segments(double l){ return std::ceil(l/h); }
 };
+
 #endif

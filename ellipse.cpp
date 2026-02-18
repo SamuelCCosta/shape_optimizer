@@ -1,281 +1,190 @@
 #include "ellipse.h"
 
-#include <cmath>
-
-// A(x-xc)^2 + 2B(x-xc)(y-yc) + C(y-yc)^2 = 1
-Ellipse::Ellipse(double x, double y, double A_, double B_, double C_) : A(A_), B(B_), C(C_) {
-    this-> det = A*C - B*B;
-    if (A < 0 || det < 0){ 
-        throw std::invalid_argument("The matrix is not positive definite");
-    }
-
-    this-> M << A, B, B, C;
+Ellipse::Ellipse(double x, double y, double A, double B, double C) {
+    this-> quadratic_form << A, B, B, C;
     this-> center << x, y;
-
-    //bounding boxes half heights
-    this-> height = std::sqrt(A/det);
-    this-> width = std::sqrt(C/det);
-    //https://www.geometrictools.com/Documentation/RobustIntersectionOfEllipses.pdf
-
-    Eigen::Matrix2d M_inv = M.inverse();
-    Eigen::LLT<Eigen::Matrix2d> llt_inv(M_inv);
-    transform = llt_inv.matrixL();
-
-    //eccentricity check (if too eccentric, raise error)
-    double trace = A + C;
-    double discriminant = std::sqrt(trace * trace - 4 * det);
-    double lambda_max = (trace + discriminant) / 2.0;
-    double lambda_min = (trace - discriminant) / 2.0;
-    double ecc2 = 1.0 - lambda_min/lambda_max;
-    if (ecc2 > 0.93 * 0.93) {
-        throw std::invalid_argument("Eccentricity > 0.93");
+    double det = quadratic_form.determinant();
+    if (A < 0 || det < 0) {
+        throw std::invalid_argument("The Matrix is not positive definite");
     }
+
+    this-> bounds << std::sqrt(C/det), std::sqrt(A/det); //width, height 
+
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> solver(quadratic_form);
+
+    Eigen::Vector2d eigenvalues = solver.eigenvalues(); //sorted in increasing order
+    Eigen::Matrix2d eigenvector_matrix = solver.eigenvectors();
+
+    Eigen::Matrix2d scaling = Eigen::Matrix2d::Zero();
+    scaling(0,0) = 1.0 / std::sqrt(eigenvalues(0));
+    scaling(1,1) = 1.0 / std::sqrt(eigenvalues(1));
+
+    this-> parametrize_matrix = eigenvector_matrix * scaling;
+
+    double eccentricity_2 = 1.0 - eigenvalues(0)/eigenvalues(1);
+    if (eccentricity_2 > 0.93 * 0.93) { throw std::invalid_argument("Eccentricity > 0.93"); }
 }
 
-Mesh Ellipse::get_mesh(const double h, std::list<Manifold>& repository) const {
-    WorkingManifold RR2WM;
-    Manifold& RR2 = RR2WM.current;
+Mesh Ellipse::get_mesh(const double h) const {
+    Manifold RR2 = Manifold::working;
     Function xy = RR2.coordinates();
     Function x = xy[0], y = xy[1];
 
     double xc = center[0], yc = center[1];
-    Function implicit_eq = A * (x-xc) * (x-xc) + 2 * B * (x-xc) * (y-yc) + C * (y-yc) * (y-yc);
-    //Manifold representation = RR2.implicit(implicit_eq == 1);
+    double A = quadratic_form(0,0), B = quadratic_form(1,0), C = quadratic_form(1,1);
+    Function implicit_eq = A * (x-xc) * (x-xc) + 2 * B * (x-xc) * (y-yc) + C * (y-yc) * (y-yc); 
 
-    repository.push_back(Manifold::working.implicit(implicit_eq == 1));
-    Manifold& representation = repository.back();
-    
-    representation.set_as_working_manifold();
+    Manifold representation = RR2.implicit(implicit_eq == 1);
 
-    //Eigen::Vector2d starting_point = point_at(0);
-    Eigen::Vector2d starting_point = center + transform.col(0); //transform * [1 0]
+    //starting point and starting derivative
+    Eigen::Vector2d start_point = point_at(0), start_derivative = - derivative_at(0);
+    Cell start(tag::vertex, tag::of_coordinates, {start_point.x(), start_point.y()});
+    std::vector<double> direction = {start_derivative.x(), start_derivative.y()};
 
-    double x_0 = starting_point.x(), y_0 = starting_point.y();
-
-    Eigen::Vector2d starting_derivative = transform.col(1);
-    //queremos o simétrico para a malha ter orientação contrária ao quadrado
-    double x_dir = -starting_derivative.x(), y_dir = -starting_derivative.y();
-
-    Cell start(tag::vertex, tag::of_coords, {x_0,y_0}); //extremidade equivalente a (a,0)
-    std::vector<double> direction = {x_dir, y_dir}; //direção equivalente a (0,-1)
     Mesh mesh = Mesh::Build(tag::frontal).entire_manifold().start_at(start).towards(direction).desired_length(h);
+
+    RR2.set_as_working_manifold();
 
     return mesh;
 }
 
-Mesh Ellipse::manual_get_mesh(const double h) const {
-    double trace = A + C;
-    double discriminant = std::sqrt(trace * trace - 4 * det);
-    double lambda_max = (trace + discriminant) / 2.0;
-    double lambda_min = (trace - discriminant) / 2.0;
-    double major = 1.0 / std::sqrt(lambda_min);
-    double minor = 1.0 / std::sqrt(lambda_max);
-    //double major = transform.col(0).norm();
-    //double minor = transform.col(1).norm();
-    
-    double h_lam = (major - minor) * (major - minor) / (major + minor) * (major + minor);
-    double perimeter = pi * (major + minor) * (1 + 3 * h_lam / (10 + std::sqrt(4 - 3 * h_lam)));
-    
-    size_t n_segments = std::ceil(perimeter / h);
+bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2) const {
+    // Inexpensive: check if centers are inside
+    if (e2.evaluate_at(e1.center) <= 1.0) return true;
+    if (e1.evaluate_at(e2.center) <= 1.0) return true;
 
-    Cell first_vertex(tag::non_existent);
-    Cell prev_vertex(tag::non_existent);
+    // Semi-Inexpensive: bounding boxes
+    Eigen::Vector2d h_vec(h,h);
 
-    Mesh bag(tag::fuzzy, tag::of_dim, 1);
+    Eigen::Vector2d e1_bottom_left = e1.center - e1.bounds;
+    Eigen::Vector2d e1_top_right = e1.center + e1.bounds;
 
-    for (size_t i = 0; i < n_segments; ++i) {
-        // clockwise orientation
-        double theta = 2.0 * pi * (1.0 - (double) i / n_segments);
+    Eigen::Vector2d e2_bottom_left = e2.center - e2.bounds;
+    Eigen::Vector2d e2_top_right = e2.center + e2.bounds;
 
-        Eigen::Vector2d p = point_at(theta);
-        
-        std::vector<double> coords = {p.x(), p.y()};
-        Cell current_vertex(tag::vertex, tag::of_coordinates, coords);
+    //vec1 > vec2 iff at least one of the components is bigger
+    if (is_greater(e2_bottom_left, e1_top_right + h_vec) || 
+        is_greater(e1_bottom_left, e2_top_right + h_vec))
+        { return false; }
 
-        if (i == 0) {
-            first_vertex = current_vertex;
-        } else {
-            Cell seg(tag::segment, prev_vertex.reverse(), current_vertex);
-            seg.add_to(bag);
-        }
-        prev_vertex = current_vertex;
-    }
-
-    Cell last_seg(tag::segment, prev_vertex.reverse(), first_vertex);
-    last_seg.add_to(bag);
-
-    Mesh final = bag.convert_to(tag::connected, tag::one_dim, tag::surely_exists);
-    final.closed_loop(first_vertex);
-
-    return final;
-}
-
-bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2){
-    double x1 = e1.center[0], y1 = e1.center[1];
-    double x2 = e2.center[0], y2 = e2.center[1];
-
-    double val2 = e2.A*(x1-x2)*(x1-x2) + 2*e2.B*(x1-x2)*(y1-y2) + e2.C*(y1-y2)*(y1-y2);
-    if (val2 <= 1.0) return true; //e1 center inside e2
-    double val1 = e1.A*(x1-x2)*(x1-x2) + 2*e1.B*(x1-x2)*(y1-y2) + e1.C*(y1-y2)*(y1-y2);
-    if (val1 <= 1.0) return true; //e2 center inside e1
-
-    //b = bottom, t = top, l = left, r = right
-    double e1_l_x = x1 - e1.width; 
-    double e1_b_y = y1 - e1.height;
-    double e1_r_x = x1 + e1.width;
-    double e1_t_y = y1 + e1.height;
-
-    double e2_l_x = x2 - e2.width; 
-    double e2_b_y = y2 - e2.height;
-    double e2_r_x = x2 + e2.width;
-    double e2_t_y = y2 + e2.height;
-
-    if (e1_r_x + cfg.h < e2_l_x || //e1 à esquerda de e2
-        e2_r_x + cfg.h < e1_l_x || //e1 à direita de e2
-        e1_t_y + cfg.h < e2_b_y || //e1 abaixo de e2
-        e2_t_y + cfg.h < e1_b_y)   //e1 acima de e2
-    { return false; }
-    
     return robust_intersect(e1,e2);
 }
 
-bool EllipseBundle::robust_intersect(const Ellipse& e1, const Ellipse& e2) const {
-    const double h_sq = cfg.h * cfg.h;
-    const double eps = 1e-09;
-    const double max_iterations = 15;
+bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const {
+    const double h_sq = h * h;
+    const double eps = 1e-10;
+    const int max_iterations = 10;
+    
+    auto [theta1, theta2] = starting_parameters(e1, e2);
+    
+    for (int i = 0; i < max_iterations; i++) {
+        // Useful numbers
+        double cos_1 = std::cos(theta1), sin_1 = std::sin(theta1);
+        double cos_2 = std::cos(theta2), sin_2 = std::sin(theta2);
 
-    //transform columns are the semiaxis vectors
-    auto u1 = e1.transform.col(0), v1 = e1.transform.col(1);
-    auto u2 = e2.transform.col(0), v2 = e2.transform.col(1);
+        Eigen::Vector2d P1 = e1.point_at(Eigen::Vector2d(cos_1, sin_1));
+        Eigen::Vector2d P2 = e2.point_at(Eigen::Vector2d(cos_2, sin_2));
 
-    double theta1 = 0.0;
-    double theta2 = 0.0;
-    double min_start_dist = 1e15;
+        // Sanity check: are the points outside of the other ellipse?
+        if (e2.is_inside(P1) || e1.is_inside(P2)) return true;
 
-    //Check tips
-    const double angles[] = {0.0, pi/2, pi, 3 * pi/2};
+        // Check if the distance^2 between points is less than h^2
+        Eigen::Vector2d difference = P1 - P2;
+        if (difference.squaredNorm() <= h_sq) return true;
 
-    for(int i=0; i<4; ++i) {
-        double t1 = angles[i];
-        Eigen::Vector2d p1 = e1.center + u1 * std::cos(t1) + v1 * std::sin(t1);
-        
-        for(int j=0; j<4; ++j) {
-            double t2 = angles[j];
-            Eigen::Vector2d p2 = e2.center + u2 * std::cos(t2) + v2 * std::sin(t2);
+        Eigen::Vector2d P_prime_1 = e1.derivative_at(Eigen::Vector2d(- sin_1, cos_1));
+        Eigen::Vector2d P_prime_2 = e2.derivative_at(Eigen::Vector2d(- sin_2, cos_2));
+
+        // (dot_1,dot_2) are the functions we are trying to equal to zero
+        double dot_1 = difference.dot(P_prime_1), dot_2 = difference.dot(P_prime_2);
+        if (std::abs(dot_1) < eps && std::abs(dot_2) < eps) break; //optimization is complete
+
+        // Update theta1 and theta2
+        Eigen::Vector2d P_doubleprime_1 = e1.second_derivative_at(Eigen::Vector2d(- cos_1, - sin_1));
+        Eigen::Vector2d P_doubleprime_2 = e2.second_derivative_at(Eigen::Vector2d(- cos_2, - sin_2));
+
+        // Hessian Matrix
+        double H00 = P_prime_1.squaredNorm() + difference.dot(P_doubleprime_1);
+        double H01 = - P_prime_1.dot(P_prime_2);
+        double H11 = P_prime_2.squaredNorm() - difference.dot(P_doubleprime_2);
+
+        double hessian_determinant = H00 * H11 - H01 * H01;
+        if (std::abs(hessian_determinant) < eps) return true; //Degenerate Hessian
+
+        // Solve linear system with Cramer's Rule
+        // [H00 H01] [ delta_1 ] = [ - dot_1 ]
+        // [H01 H11] [ delta_2 ]   [ - dot_2 ]
+
+        double delta_1 = (- dot_1 * H11 + H01 * dot_2) / hessian_determinant;
+        double delta_2 = (H00 * (- dot_2) + dot_1 * H01) / hessian_determinant;
+
+        // update parameters
+        theta1 += delta_1, theta2 += delta_2;
+    }
+    
+    // check final parameters
+    Eigen::Vector2d P1 = e1.point_at(theta1);
+    Eigen::Vector2d P2 = e2.point_at(theta2);
+
+    // Sanity check: are the points outside of the other ellipse?
+    if (e2.is_inside(P1) || e1.is_inside(P2)) return true;
+
+    // Check if the distance^2 between points is less than h^2
+    return (P1 - P2).squaredNorm() <= h_sq;
+}
+
+std::pair<double, double> EllipseBundle::starting_parameters(const Ellipse &e1, const Ellipse &e2) const {
+    double theta1 = 0,theta2 = 0;
+    double min_start_dist_sq = 1e10;
+
+    //center test
+    const Eigen::Vector2d diff = e2.center - e1.center;
+
+    //parameter for e1
+    Eigen::Vector2d dir1 = e1.parametrize_matrix.inverse() * diff;
+    double t1_center = std::atan2(dir1.y(), dir1.x());
+
+    //parameter for e2
+    Eigen::Vector2d dir2 = e2.parametrize_matrix.inverse() * (-diff);
+    double t2_center = std::atan2(dir2.y(), dir2.x());
+
+    Eigen::Vector2d p1 = e1.point_at(t1_center);
+    Eigen::Vector2d p2 = e2.point_at(t2_center);
+    double dist_sq = (p1-p2).squaredNorm();
+
+    if (dist_sq <= min_start_dist_sq) {
+        min_start_dist_sq = dist_sq;
+        theta1 = t1_center;
+        theta2 = t2_center;
+    }
+
+    const std::vector<double> e1_adj_angles = adjacent_angles(t1_center);
+    const std::vector<double> e2_adj_angles = adjacent_angles(t2_center);
+
+    //check if best starting point changes
+    for (const double t1 : e1_adj_angles){
+        p1 = e1.point_at(t1);   
+        for (const double t2 : e2_adj_angles){
+            p2 = e2.point_at(t2);
+            dist_sq = (p1-p2).squaredNorm();
             
-            double d2 = (p1 - p2).squaredNorm();
-            if(d2 < min_start_dist) {
-                min_start_dist = d2;
+            if (dist_sq <= min_start_dist_sq) {
+                min_start_dist_sq = dist_sq;
                 theta1 = t1;
                 theta2 = t2;
             }
         }
     }
 
-    // center test
-    Eigen::Vector2d C_vec = e2.center - e1.center;
-    double base1 = std::atan2(C_vec.dot(v1), C_vec.dot(u1));
-    double base2 = std::atan2((-C_vec).dot(v2), (-C_vec).dot(u2));
-    
-    Eigen::Vector2d p1_c = e1.center + u1 * std::cos(base1) + v1 * std::sin(base1);
-    Eigen::Vector2d p2_c = e2.center + u2 * std::cos(base2) + v2 * std::sin(base2);
-    if ((p1_c - p2_c).squaredNorm() < min_start_dist) {
-        theta1 = base1;
-        theta2 = base2;
-    }
-    
-    
-    for (int i = 0; i < max_iterations; ++i){
-        double c1 = std::cos(theta1), s1 = std::sin(theta1);
-        double c2 = std::cos(theta2), s2 = std::sin(theta2);
-
-        // P(t) = C + u cos(t) + v sin(t)
-        Eigen::Vector2d P1 = e1.center + u1 * c1 + v1 * s1;
-        Eigen::Vector2d P2 = e2.center + u2 * c2 + v2 * s2;
-        //if (i == 0) std::cout << "P1: " << P1 << " P2: " << P2 << std::endl; //Pontos iniciais
-
-        // check if the point is inside the other ellipse
-        if (e2.evaluate_at(P1) <= 1 || e1.evaluate_at(P2) <= 1) return true;
-
-        // Check if dist^2 is smaller than h^2
-        Eigen::Vector2d D = P2 - P1;
-        double dist2 = D.squaredNorm();
-        if (dist2 < h_sq) return true; // too close to eachother
-        
-        // P'(t) = -u sin(t) + v cos(t)
-        Eigen::Vector2d Pp1 = -u1 * s1 + v1 * c1;
-        Eigen::Vector2d Pp2 = -u2 * s2 + v2 * c2;
-
-        // we want r1,r2 = 0 (perpendicular)
-        double r1 = D.dot(Pp1), r2 = -D.dot(Pp2); 
-        // If the vectors are perpendicular, we found our minimum
-        if (std::abs(r1) < eps && std::abs(r2) < eps) break;
-
-        // P''(t) = C - P(t) or P''(t) = -u cos(t) - v sin(t)
-        Eigen::Vector2d Ppp1 = -u1 * c1 - v1 * s1;
-        Eigen::Vector2d Ppp2 = -u2 * c2 - v2 * s2;
-
-        // calculate Hessian matrix
-        // H00 = P1' P1' + D P1''
-        double H00 = Pp1.squaredNorm() + D.dot(Ppp1);
-        // H01 = - P1' P2'
-        double H01 = -Pp1.dot(Pp2);
-        // H11 = P2' P2' - D P2''
-        double H11 = Pp2.squaredNorm() - D.dot(Ppp2);
-
-        double det = H00 * H11 - H01 * H01;
-
-        //std::cout << "H00: " << H00 << " H01: " << H01 << " H11: " << H11 << std::endl;
-        //std::cout << "det: " << det << std::endl;
-        
-        if (std::abs(det) < eps) return true; //Degenerate Hessian
-
-        // Update parameters
-        // Cramer's rule
-        // [ H00 H01 ] [ dt1 ] = [ -r1 ]
-        // [ H01 H11 ] [ dt2 ]   [ -r2 ]
-
-        double dtheta1 = (H11 * r1 - H01 * r2) / det;
-        double dtheta2 = (H00 * r2 - H01 * r1) / det;
-
-        theta1 += dtheta1, theta2 += dtheta2;
-    }
-
-    double c1 = std::cos(theta1), s1 = std::sin(theta1);
-    double c2 = std::cos(theta2), s2 = std::sin(theta2);
-    Eigen::Vector2d P1 = e1.center + u1 * c1 + v1 * s1;
-    Eigen::Vector2d P2 = e2.center + u2 * c2 + v2 * s2;
-
-    // check if the point is inside the other ellipse
-    if (e2.evaluate_at(P1) <= 1 || e1.evaluate_at(P2) <= 1) return true;
-
-    //std::cout << "P1: " << P1 << " P2: " << P2 << std::endl;
-
-    //std::cout << "\"min dist\":"<< std::sqrt((P2 - P1).squaredNorm()) << std::endl;
-
-    return (P2 - P1).squaredNorm() < h_sq;
+    return {theta1, theta2};
 }
 
-Mesh EllipseBundle::total_mesh(std::list<Manifold>& repository) const {
-    if (bundle.empty()) return Mesh(tag::non_existent);
-    
-    std::vector<Mesh> mesh_bundle;
-    mesh_bundle.reserve(cfg.num_ellipses);
-    for (auto& ellipse : bundle){
-        mesh_bundle.push_back(ellipse.get_mesh(cfg.h, repository));
-    }
+std::vector<double> EllipseBundle::adjacent_angles(const double theta) const {
+    const std::vector<double> angles = {0.0, pi/2, pi, 3 * pi / 2};
+    const double two_over_pi = 2.0 / pi;
 
-    return Mesh::Build(tag::join).meshes(mesh_bundle);
-}
+    int index = static_cast<int>(theta * two_over_pi); //floors the result when casting
+    index = index % 4; //range of atan is [-pi,pi]
 
-Mesh EllipseBundle::manual_total_mesh() const {
-    if (bundle.empty()) return Mesh(tag::non_existent);
-    
-    std::vector<Mesh> mesh_bundle;
-    mesh_bundle.reserve(cfg.num_ellipses);
-    for (auto& ellipse : bundle){
-        mesh_bundle.push_back(ellipse.manual_get_mesh(cfg.h));
-    }
-
-    return Mesh::Build(tag::join).meshes(mesh_bundle);
+    return {angles[index], angles[(index + 1) % 4]};
 }

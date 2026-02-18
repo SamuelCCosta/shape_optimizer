@@ -12,7 +12,7 @@ MESH_FILE = solution.msh
 VIEW_OPTIONS = view-options.geo
 
 # compilation flags (do NOT forget to match with the ones that maniFEM was built with)
-CFLAGS = -O3 -flto=8 -march=znver4
+CFLAGS = -O3
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FEM
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FRONTAL
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_QUOTIENT
@@ -24,12 +24,12 @@ CFLAGS := $(CFLAGS) -std=c++23 -c -Wshadow -Wall -I . -fPIC
 
 PROFILE_CFLAGS = $(CFLAGS) $(PROFILE_FLAGS)
 
-PROFILE_OBJS = main.p.o maniUtils.p.o maniSolver.p.o ellipse.p.o square_solver.p.o
+PROFILE_OBJS = main.p.o ellipse.p.o square_solver.p.o
 PROFILE_REPORT = analysis.txt
 
-OBJS = main.o maniUtils.o maniSolver.o ellipse.o square_solver.o
+OBJS = main.o ellipse.o square_solver.o
 
-PY_OBJS = bindings.o maniUtils.o maniSolver.o ellipse.o square_solver.o
+PY_OBJS = bindings.o ellipse.o square_solver.o
 
 %.o: %.cpp
 	$(CC) $(CFLAGS) $^

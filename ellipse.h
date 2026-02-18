@@ -2,67 +2,92 @@
 #define ELLIPSE_H
 
 #include "maniFEM.h"
-#include "constants.h"
-#include "domain_config.h"
+#include <map>
+#include <string>
 #include <numbers>
 #include <Eigen/Dense>
+#include <numbers>
 
-class WorkingManifold{
-    public:
-        WorkingManifold() : current(Manifold::working) {}
-        ~WorkingManifold() {current.set_as_working_manifold();}
+constexpr double pi = std::numbers::pi;
 
-        WorkingManifold(const WorkingManifold&) = delete;
-        WorkingManifold& operator=(const WorkingManifold&) = delete;
-
-        Manifold current;
-};
-
-
+// Class of ellipses with eccentricity < 0.93
 class Ellipse {
     public:
-        double height, width, A, B, C, det;
+        //(x-center)^T*q_form*(x-center) = 1
+        // also known as (x-center, q_form*(x-center))
+        
         Eigen::Vector2d center;
-        Eigen::Matrix2d M;
-        Eigen::Matrix2d transform; //M^-1 = A * A^T <- matriz A
+        Eigen::Matrix2d quadratic_form;
+        Eigen::Matrix2d parametrize_matrix;
+        Eigen::Vector2d bounds; //bounding half-heights
+        
+        // Enforces the ellipse invariants and eccentricity < 0.93
+        Ellipse(double x, double y, double A, double B, double C);
+        
+        Mesh get_mesh(const double h) const;
 
-        Ellipse(double x_i, double y_i, double A_i, double B_i, double C_i);
+        double area() const {return pi * 1 / (quadratic_form.determinant() * quadratic_form.determinant());}
+        
+        //https://www.geometrictools.com/Documentation/RobustIntersectionOfEllipses.pdf
+        //bounding boxes half heights
+        double width() const {return std::sqrt(quadratic_form(0,0)/quadratic_form.determinant());}
 
-        Mesh get_mesh(const double h, std::list<Manifold>& repository) const;
-        Mesh manual_get_mesh(const double h) const;
+        double height() const {return std::sqrt(quadratic_form(1,1)/quadratic_form.determinant());}
 
-        double area() const {return pi * 1 / (det * det);}
-
-        Eigen::Vector2d point_at(double theta) const {
-            return center + transform * Eigen::Vector2d(std::cos(theta), std::sin(theta));
-        }
-
-        Eigen::Vector2d derivative_at(double theta) const {
-            return transform * Eigen::Vector2d(-std::sin(theta), std::cos(theta));
-        }
-
-        double evaluate_at(const Eigen::Vector2d point) const {
+        Eigen::Vector2d bounding_half() const {return Eigen::Vector2d(width(), height());}
+        
+        double evaluate_at(Eigen::Vector2d point) const {
             Eigen::Vector2d d = point - center;
-            return d.dot(M * d);
+            return d.dot(quadratic_form * d);
         }
+
+        Eigen::Vector2d point_at(const double t) const { 
+            Eigen::Vector2d point(std::cos(t), std::sin(t));
+            return center + parametrize_matrix * point;
+        }
+
+        Eigen::Vector2d derivative_at(const double t) const {
+            Eigen::Vector2d point(- std::sin(t), std::cos(t));
+            return parametrize_matrix * point;
+        }
+
+        Eigen::Vector2d second_derivative_at(const double t) const {
+            Eigen::Vector2d point(- std::cos(t),- std::sin(t));
+            return parametrize_matrix * point;
+        }
+
+        // must be unitary vector
+        Eigen::Vector2d point_at(Eigen::Vector2d point) const { 
+            return center + parametrize_matrix * point;
+        }
+
+        // must be unitary vector
+        Eigen::Vector2d derivative_at(Eigen::Vector2d point) const {
+            return parametrize_matrix * point;
+        }
+
+        // must be unitary vector
+        Eigen::Vector2d second_derivative_at(Eigen::Vector2d point) const {
+            return parametrize_matrix * point;
+        }
+
+        bool is_inside(Eigen::Vector2d point) const { return evaluate_at(point) <= 1; }
 };
 
 
-class EllipseBundle{
+class EllipseBundle {
     public:
         std::vector<Ellipse> bundle;
-        const DomainConfig cfg;
+        const double x_max, y_max, MW_x, ME_x;
+        const double h;
 
-        EllipseBundle(const DomainConfig& Cfg) : cfg(Cfg) {bundle.reserve(cfg.num_ellipses);}
-
+        EllipseBundle(std::map<std::string, double> &geometric_config, const double h_param, const size_t num_ellipses) :
+        x_max(geometric_config["x_max"]), y_max(geometric_config["y_max"]), MW_x(geometric_config["MW_x"]),
+        ME_x(geometric_config["ME_x"]), h(h_param) {bundle.reserve(num_ellipses);}
+            
         void add(const Ellipse &new_ellipse){
             check_intersections(new_ellipse);
             bundle.push_back(new_ellipse);
-        }
-
-        void add(Ellipse&& new_ellipse) {
-            check_intersections(new_ellipse);
-            bundle.push_back(std::move(new_ellipse));
         }
 
         const double area() const {
@@ -73,13 +98,24 @@ class EllipseBundle{
             return total;
         }
 
-        Mesh total_mesh(std::list<Manifold>& repository) const;
-        Mesh manual_total_mesh() const;
+        Mesh total_mesh() const {
+            std::vector<Mesh> mesh_bundle;
+            for (const auto &ellipse : bundle) {
+                mesh_bundle.push_back(ellipse.get_mesh(h));
+            }
+
+            return Mesh::Build(tag::join).meshes(mesh_bundle);
+        }
 
     private:
-        void check_intersections(const Ellipse &new_ellipse){
+        // vec1 > vec2 iff at least one of the components is bigger
+        bool is_greater(const Eigen::Vector2d &vec1, const Eigen::Vector2d &vec2) const {
+            return (vec1.array() > vec2.array()).any();
+        }
+
+        void check_intersections(const Ellipse &new_ellipse) const {
             if (!is_inside(new_ellipse)){
-                throw std::invalid_argument("Ellipse does not fit in the domain");
+                throw std::invalid_argument("Ellipse does not fit in the domain");    
             }
             for (auto & ellipse : bundle){
                 if (intersects(new_ellipse, ellipse)){ 
@@ -87,21 +123,20 @@ class EllipseBundle{
                 };
             }
         }
+        
+        bool is_inside(const Ellipse &e1) const {
+            double horizontal_margin = e1.bounds[0] + h;
+            double vertical_margin = e1.bounds[1] + h;
+            double x = e1.center.x(), y = e1.center.y();
 
-        bool is_inside(const Ellipse& e1){ //bounds checking
-            double horizontal_margin = cfg.h + e1.width;
-            double vertical_margin = cfg.h + e1.height;
-            double x = e1.center[0], y = e1.center[1];
-
-            if ((y < vertical_margin) || (x < horizontal_margin) ||
-            (y > cfg.y_max - vertical_margin) || (x > cfg.x_max - horizontal_margin) ) {
-                return false;
-            }
-            return true;
+            return ((y > vertical_margin) && (x > horizontal_margin) &&
+            (y < y_max - vertical_margin) && (x < x_max - horizontal_margin));
         }
 
-        bool intersects(const Ellipse &e1, const Ellipse &e2);
+        bool intersects(const Ellipse &e1, const Ellipse &e2) const;
         bool robust_intersect(const Ellipse &e1, const Ellipse &e2) const;
-        std::pair<double, double> get_initial_thetas(const Ellipse& e1, const Ellipse& e2) const;
+        std::pair<double, double> starting_parameters(const Ellipse &e1, const Ellipse &e2) const;
+        std::vector<double> adjacent_angles(const double theta) const;
 };
+
 #endif

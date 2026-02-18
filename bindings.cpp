@@ -1,61 +1,84 @@
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
 #include <pybind11/eigen.h>
+#include <pybind11/stl.h>
 
-#include "domain_config.h"
 #include "ellipse.h"
 #include "square_solver.h"
 
 namespace py = pybind11;
 
 PYBIND11_MODULE(square_solver, m) {
-    m.doc() = "Python bindings for SquareSolver and EllipseBundle";
+    m.doc() = "Bindings for Ellipse and SquareSolver using maniFEM";
 
-    // --- DomainConfig Binding ---
-    py::class_<DomainConfig>(m, "DomainConfig")
-        .def(py::init<>(), "Default constructor")
-        .def(py::init<double, double, double, double, double, size_t>(),
-             py::arg("x_m"), py::arg("y_m"), py::arg("MW"), py::arg("ME"), 
-             py::arg("h_size"), py::arg("n_ellipses"),
-             "Parameterized constructor")
-        .def_readonly("x_max", &DomainConfig::x_max)
-        .def_readonly("y_max", &DomainConfig::y_max)
-        .def_readonly("MW_x", &DomainConfig::MW_x)
-        .def_readonly("ME_x", &DomainConfig::ME_x)
-        .def_readonly("h", &DomainConfig::h)
-        .def_readonly("num_ellipses", &DomainConfig::num_ellipses)
-        .def("n_segments", &DomainConfig::n_segments);
-
-    // --- Ellipse Binding ---
+    // --- Ellipse Bindings ---
     py::class_<Ellipse>(m, "Ellipse")
         .def(py::init<double, double, double, double, double>(),
-             py::arg("x_i"), py::arg("y_i"), py::arg("A_i"), py::arg("B_i"), py::arg("C_i"))
+             py::arg("x"), py::arg("y"), py::arg("A"), py::arg("B"), py::arg("C"))
+        
+        // Member variables
+        .def_readwrite("center", &Ellipse::center)
+        .def_readwrite("quadratic_form", &Ellipse::quadratic_form)
+        .def_readwrite("parametrize_matrix", &Ellipse::parametrize_matrix)
+        .def_readwrite("bounds", &Ellipse::bounds)
+
+        // Methods
         .def("area", &Ellipse::area)
-        .def("point_at", &Ellipse::point_at)
-        .def("derivative_at", &Ellipse::derivative_at)
-        .def_readwrite("center", &Ellipse::center) 
-        .def_readonly("height", &Ellipse::height)
-        .def_readonly("width", &Ellipse::width);
+        .def("width", &Ellipse::width)
+        .def("height", &Ellipse::height)
+        .def("bounding_half", &Ellipse::bounding_half)
+        .def("evaluate_at", &Ellipse::evaluate_at, py::arg("point"))
+        .def("is_inside", &Ellipse::is_inside, py::arg("point"))
 
-    // --- EllipseBundle Binding ---
+        // Specific Overloads (Exposing only the 'double' variants)
+        .def("point_at", 
+             py::overload_cast<const double>(&Ellipse::point_at, py::const_), 
+             py::arg("t"))
+        .def("derivative_at", 
+             py::overload_cast<const double>(&Ellipse::derivative_at, py::const_), 
+             py::arg("t"))
+        .def("second_derivative_at", 
+             py::overload_cast<const double>(&Ellipse::second_derivative_at, py::const_), 
+             py::arg("t"));
+
+
+    // --- EllipseBundle Bindings ---
     py::class_<EllipseBundle>(m, "EllipseBundle")
-        .def(py::init<const DomainConfig&>())
-        .def("add", [](EllipseBundle &self, const Ellipse &e) {
-            self.add(e);
-        }, "Add an ellipse to the bundle (throws if invalid)")
-        .def("area", &EllipseBundle::area)
-        .def_readonly("cfg", &EllipseBundle::cfg);
+        .def(py::init<std::map<std::string, double>&, const double, const size_t>(),
+             py::arg("geometric_config"), py::arg("h"), py::arg("num_ellipses"))
+        
+        // Member variables
+        .def_readwrite("bundle", &EllipseBundle::bundle)
+        .def_readonly("x_max", &EllipseBundle::x_max)
+        .def_readonly("y_max", &EllipseBundle::y_max)
+        .def_readonly("MW_x", &EllipseBundle::MW_x)
+        .def_readonly("ME_x", &EllipseBundle::ME_x)
+        .def_readonly("h", &EllipseBundle::h)
 
-    // --- SquareSolver Binding ---
+        // Methods
+        .def("add", &EllipseBundle::add, py::arg("new_ellipse"))
+        .def("area", &EllipseBundle::area);
+
+
+    // --- SquareSolver Bindings ---
     py::class_<SquareSolver>(m, "SquareSolver")
-        .def(py::init<DomainConfig, double, double, double, bool>(),
-             py::arg("cfg"), 
+        // Binding the constructor that uses doubles for boundary conditions
+        .def(py::init<std::map<std::string, double>&, const double, const double, const double, const double, const bool, const bool>(),
+             py::arg("geometric_config"), 
+             py::arg("h"),
              py::arg("heat_sources"), 
-             py::arg("base_temp"), 
+             py::arg("base_temp"),
              py::arg("penalization"), 
+             py::arg("export_domain"), 
              py::arg("export_mesh"))
-        .def("solve", &SquareSolver::solve, 
-             py::arg("bundle"), 
-             py::call_guard<py::gil_scoped_release>(),
-             "Solves the system and returns the objective value (GIL is released)");
+        
+        // Member variables (subset based on public visibility)
+        .def_readwrite("h", &SquareSolver::h)
+        .def_readwrite("heat_sources", &SquareSolver::heat_sources)
+        .def_readwrite("base_temp", &SquareSolver::base_temp)
+        .def_readwrite("penalization", &SquareSolver::penalization)
+        .def_readonly("export_domain", &SquareSolver::export_domain)
+        .def_readonly("export_result", &SquareSolver::export_result)
+
+        // Methods
+        .def("solve", &SquareSolver::solve, py::arg("bundle"));
 }

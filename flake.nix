@@ -20,7 +20,7 @@ outputs = { self, nixpkgs }: {
                 "-fPIC"
                 "-I ."
                 "-I ${pkgs.eigen}/include/eigen3"
-                "-DOMIT_OBSOLETE_CODE"
+                # "-DOMIT_OBSOLETE_CODE"
 
                 # You may comment or uncomment lines below
                 # "-DMANIFEM_NO_FEM"
