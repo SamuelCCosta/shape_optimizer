@@ -67,6 +67,7 @@ outputs = { self, nixpkgs }: {
                 ps.pybind11
                 ps.pybind11-stubgen
                 ps.matplotlib
+                ps.pebble
             ]);
 
         in
