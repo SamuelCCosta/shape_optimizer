@@ -68,9 +68,11 @@ outputs = { self, nixpkgs }: {
                 ps.pybind11-stubgen
                 ps.matplotlib
                 ps.pebble
+                ps.numpy
             ]);
 
         in
+        
         pkgs.mkShell {
             packages = [
                 pkgs.gcc

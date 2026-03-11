@@ -41,7 +41,7 @@ def simmulated_annealing(initial_params : list[float],
                          scales, initial_temp, cooling_rate,
                          max_iter):
     current_params = np.array(initial_params.copy())
-    current_cost : float = cost(current_params).result()
+    current_cost : float = cost(current_params).result() # pyright: ignore[reportAttributeAccessIssue]
 
     best_params = current_params.copy()
     best_cost = current_cost
@@ -60,7 +60,7 @@ def simmulated_annealing(initial_params : list[float],
             neighbour_params = current_params + noise
             future_neigh = cost(neighbour_params)
             try:
-                neigh_cost = future_neigh.result()
+                neigh_cost = future_neigh.result() # pyright: ignore[reportAttributeAccessIssue]
             except TimeoutError:
                 print('Took too long')
                 neigh_cost = float('inf')
@@ -113,4 +113,4 @@ if __name__ == '__main__':
                                            max_iterations)
     
     print(best_parameters)
-    print(f'Best cost: {cost(best_parameters).result()}')
+    print(f'Best cost: {cost(best_parameters).result()}') # pyright: ignore[reportAttributeAccessIssue]

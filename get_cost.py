@@ -8,8 +8,8 @@ from concurrent.futures import TimeoutError
 h = 0.02
 heat_source = 10.0
 base_temp = 0.0
-penalization = 100.0
-num_ellipses = 4
+penalization = 50.0
+num_ellipses = 1
 geometric_info = {'x_max' : 1.0, 'y_max' : 1.0, 'MW_x' : 0.3, 'ME_x' : 0.7}
 export_domain = False
 export_solution = False
@@ -36,9 +36,6 @@ def cost(params):
         return float('inf')
 
 if __name__ == '__main__':
-    params = [0.4528497255555963, 0.5195018072130883, 255.24891698211133, -38.35196654400833, 262.5530482957416,
-              0.45017099450198184, 0.6923857353204883, 231.7094153654055, -47.15190162486053, 287.10515606531953,
-              0.5265268828586713, 0.33421315950352537, 293.72495839816185, -112.08640183253189, 204.51894409046088,
-              0.4319381994260433, 0.8739065566217921, 209.82444979164484, 67.87935546812955, 128.8843669760333]
+    params = [0.4528497255555963, 0.5195018072130883, 255.24891698211133, -38.35196654400833, 262.5530482957416]
 
-    print(f'Cost: {cost(params).result()}')
+    print(f'Cost: {cost(params).result()}') # pyright: ignore[reportAttributeAccessIssue]

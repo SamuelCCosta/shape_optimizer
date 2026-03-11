@@ -26,7 +26,7 @@ class Ellipse {
         
         Mesh get_mesh(const double h) const;
 
-        double area() const {return pi * 1 / (quadratic_form.determinant() * quadratic_form.determinant());}
+        double area() const {return pi * 1 / std::sqrt(quadratic_form.determinant());}
         
         //https://www.geometrictools.com/Documentation/RobustIntersectionOfEllipses.pdf
         //bounding boxes half heights
