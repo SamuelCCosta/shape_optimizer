@@ -8,14 +8,14 @@ from concurrent.futures import TimeoutError
 h = 0.02
 heat_source = 10.0
 base_temp = 0.0
-penalization = 50.0
+penalization = 0.0
 num_ellipses = 1
 geometric_info = {'x_max' : 1.0, 'y_max' : 1.0, 'MW_x' : 0.3, 'ME_x' : 0.7}
 export_domain = False
 export_solution = False
 
 
-@concurrent.process(timeout = 2)
+@concurrent.process(timeout = 2.0)
 def cost(params):
     sqs : SquareSolver = SquareSolver(geometric_info, h,
                                       heat_source, base_temp,
@@ -28,6 +28,8 @@ def cost(params):
             idx = i * n_param
             ellipses.add(Ellipse(params[idx], params[idx + 1], params[idx + 2],
                                  params[idx + 3], params[idx + 4]))
+            
+        print(ellipses.area())
         return sqs.solve(ellipses)
     except ValueError: #configuração inválida
         return float('inf')

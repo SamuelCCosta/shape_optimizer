@@ -8,3 +8,4 @@
 *.so
 msh/
 refactor/
+__pycache__/

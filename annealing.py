@@ -2,12 +2,13 @@ from abc import ABC, abstractmethod
 import numpy as np
 import random
 import multiprocessing as mp
-from pebble import concurrent, ProcessExpired
+from pebble import ProcessPool
+from typing import Any
 
 spawn_ctx = mp.get_context('spawn') #fork context (default on linux) can lead to some issues
 
-class BaseSimmulatedAnnealing(ABC):
-    '''Regular Simmulated Annealing algorithm, with geometric temperature reduction'''
+class BaseSimulatedAnnealing(ABC):
+    '''Regular Simulated Annealing algorithm, with geometric temperature reduction'''
 
     def __init__(self, initial_temp = 1000.0, min_temp = 0.001, cooling_rate = 0.95):
         self.initial_temp = initial_temp
@@ -19,7 +20,7 @@ class BaseSimmulatedAnnealing(ABC):
         self.best_cost = float('inf')
 
     @abstractmethod
-    def get_neighbour(self, state):
+    def get_neighbour(self, state) -> Any:
         '''Given a state, get a neighbouring state.'''
         pass
 
@@ -28,17 +29,14 @@ class BaseSimmulatedAnnealing(ABC):
         '''Get cost, might be infinite, error out or timeout'''
         pass
 
-    @concurrent.process(timeout=2.0, mp_context=spawn_ctx)
-    def _async_cost(self, state):
-        '''async wrapper for the unstable raw_cost_function'''
-        return self.raw_cost_function(state)
-
     def get_cost(self, state) -> float:
         '''Safely return the cost functional, or infinite if it did not compute'''
         try:
-            future = self._async_cost(state)
-            return future.result() #type: ignore #Pylance is not smart enough to know it returns a Future object
-        except:
+            with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
+                future = pool.schedule(self.raw_cost_function, args=[state], timeout=2.0)
+                return future.result() #type: ignore #Pylance is not smart enough to know it returns a Future object
+        except Exception as e:
+            print(repr(e))
             return float('inf')
     
     def acceptance_probability(self, old_cost, new_cost):
@@ -81,7 +79,7 @@ class BaseSimmulatedAnnealing(ABC):
         
         return self.best_state, self.best_cost
 
-class DirectSimmulatedAnnealing(ABC):
+class DirectSimulatedAnnealing(ABC):
     def __init__(self, initial_temp = 1000.0, min_temp = 0.0001, cooling_rate_max = 0.999,
                  cooling_rate_min = 0.99, base_markov_length = 50, num_configs = 100,
                  initial_perturbation = 0.05, min_perturbation = 0.01, min_cost_gap = 0.0001):
@@ -110,7 +108,7 @@ class DirectSimmulatedAnnealing(ABC):
         self.configurations = [] #sorted by cost
 
     @abstractmethod
-    def get_neighbour(self, state):
+    def get_neighbour(self, state) -> Any:
         '''Given a state, get a neighbouring state.'''
         pass
 
@@ -120,20 +118,16 @@ class DirectSimmulatedAnnealing(ABC):
         pass
 
     @abstractmethod
-    def get_starting_configs(self):
+    def get_starting_configs(self) -> list:
         '''Get starting configuration to start the optimization process'''
         pass
-
-    @concurrent.process(timeout=2.0, mp_context=spawn_ctx)
-    def _async_cost(self, state):
-        '''async wrapper for the unstable raw_cost_function'''
-        return self.raw_cost_function(state)
 
     def get_cost(self, state) -> float:
         '''Safely return the cost functional, or infinite if it did not compute'''
         try:
-            future = self._async_cost(state)
-            return future.result() #type: ignore #Pylance is not smart enough to know it returns a Future object
+            with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
+                future = pool.schedule(self.raw_cost_function, args=[state], timeout=2.0)
+                return future.result() #type: ignore #Pylance is not smart enough to know it returns a Future object
         except:
             return float('inf')
     
@@ -192,6 +186,8 @@ class DirectSimmulatedAnnealing(ABC):
 
     def run(self):
         '''The main optimization loop, returns a tuple with best cost and best configuration.'''
+        self.configurations = self.get_starting_configs()
+
         while (self.perturbation > self.min_perturbation) or (self.temp > self.min_temp) or (self.cost_gap() >  self.min_cost_gap):
             self.current_markov_length = self.markov_length()
             previous_second_worst_cost = self.second_worst_cost()
@@ -222,10 +218,9 @@ class DirectSimmulatedAnnealing(ABC):
         return self.configurations[0]
 
 
-
 if __name__ == '__main__':
     #example
-    class ParabolaMinimizer(BaseSimmulatedAnnealing):
+    class ParabolaMinimizer(BaseSimulatedAnnealing):
         def __init__(self, step_size = 1.0, **kwargs):
             super().__init__(**kwargs)
             self.step_size = step_size

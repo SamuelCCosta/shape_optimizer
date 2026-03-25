@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 # The input list provided
-raw_data = [  0.44394443,   0.92799368, 360.52398564, 131.15000144, 420.18792406]
+raw_data = [0.3, 0.3, 81.0, 15.0, 81.0]
 
 def get_ellipse_parameters(data):
     """
