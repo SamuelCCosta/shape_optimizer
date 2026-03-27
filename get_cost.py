@@ -9,7 +9,7 @@ h = 0.02
 heat_source = 10.0
 base_temp = 0.0
 penalization = 0.0
-num_ellipses = 1
+num_ellipses = 4
 geometric_info = {'x_max' : 1.0, 'y_max' : 1.0, 'MW_x' : 0.3, 'ME_x' : 0.7}
 export_domain = False
 export_solution = False
@@ -29,7 +29,7 @@ def cost(params):
             ellipses.add(Ellipse(params[idx], params[idx + 1], params[idx + 2],
                                  params[idx + 3], params[idx + 4]))
             
-        print(ellipses.area())
+        print(ellipses.area(), 'pen = 30', 30.0*(1-ellipses.area()))
         return sqs.solve(ellipses)
     except ValueError: #configuração inválida
         return float('inf')
@@ -38,6 +38,9 @@ def cost(params):
         return float('inf')
 
 if __name__ == '__main__':
-    params = [0.4528497255555963, 0.5195018072130883, 255.24891698211133, -38.35196654400833, 262.5530482957416]
+    params = [   0.53446306,    0.50259374,  243.77396884,  -33.96889496,  261.82802112,
+    0.42235164,    0.70059529,  233.99220896,  -43.95489961,  288.09370986,
+    0.56719944,    0.34218724,  289.65241533, -106.94255163,  203.10652993,
+    0.46513083,    0.8759024,   208.72228596,   71.36566829,  130.41681181]
 
     print(f'Cost: {cost(params).result()}') # pyright: ignore[reportAttributeAccessIssue]
