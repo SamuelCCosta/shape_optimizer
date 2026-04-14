@@ -10,6 +10,9 @@
 #include <Eigen/SparseCore>
 #include <Eigen/IterativeLinearSolvers>
 
+//temp
+#include <chrono>
+
 using namespace maniFEM;
 
 class SquareSolver {
@@ -17,18 +20,20 @@ class SquareSolver {
         double x_max, y_max, MW_x, ME_x;
         double h;
         double heat_sources, base_temp; //boundary conditions
-        double penalization; //objective funcional penalization on area
         const bool export_domain;
         const bool export_result;
-        Manifold ambient; //R^2
-        Mesh north; //objective funcional calculation
-        Mesh south; //Dirichlet boundary condition
-        Mesh sources; //Neumann boundary condition
-        Mesh square_boundary; //Domain construction
+        Manifold ambient{tag::Euclid, tag::of_dim, 2}; //R^2
+        Mesh north{tag::non_existent}; //objective funcional calculation
+        Mesh south{tag::non_existent}; //Dirichlet boundary condition
+        Mesh sources{tag::non_existent}; //Neumann boundary condition
+        Mesh square_boundary{tag::non_existent}; //Domain construction
 
         SquareSolver(std::map<std::string, double> &geometric_config, const double h_param, const double heat_srcs,
-            const double base_tmp, const double pen, const bool export_dom, const bool export_res);
+            const double base_tmp, const bool export_dom, const bool export_res);
         
+        // Both exports are set to false
+        SquareSolver(std::map<std::string, double> &geometric_config, const double h_param, const double heat_srcs,
+            const double base_tmp);
 
         // returns the objective functional value
         double solve(EllipseBundle &bundle);

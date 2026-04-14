@@ -4,14 +4,11 @@ SquareSolver::SquareSolver(std::map<std::string, double> &geometric_config,
     const double h_param,
     const double heat_srcs,
     const double base_tmp,
-    const double pen,
     const bool export_dom,
     const bool export_res) :
     x_max(geometric_config["x_max"]), y_max(geometric_config["y_max"]), MW_x(geometric_config["MW_x"]),
-    ME_x(geometric_config["ME_x"]), h(h_param), heat_sources(heat_srcs), base_temp(base_tmp), penalization(pen),
-    export_domain(export_dom), export_result(export_res), ambient(tag::Euclid, tag::of_dim, 2),
-    north(tag::non_existent), south(tag::non_existent), sources(tag::non_existent),
-    square_boundary(tag::non_existent)
+    ME_x(geometric_config["ME_x"]), h(h_param), heat_sources(heat_srcs), base_temp(base_tmp),
+    export_domain(export_dom), export_result(export_res)
     {
     Function xy = ambient.build_coordinate_system(tag::Lagrange, tag::of_degree, 1);
     Function x = xy[0], y = xy[1];
@@ -49,6 +46,13 @@ SquareSolver::SquareSolver(std::map<std::string, double> &geometric_config,
     north = Mesh::Build(tag::join).meshes({sources, north_middle});
 }
 
+SquareSolver::SquareSolver(std::map<std::string, double> &geometric_config,
+    const double h_param,
+    const double heat_srcs,
+    const double base_tmp) :
+    SquareSolver(geometric_config, h_param, heat_srcs, base_tmp, false, false) {}
+
+
 double SquareSolver::solve(EllipseBundle &bundle) {
     ambient.set_as_working_manifold();
     Function xy = ambient.coordinates();   
@@ -56,8 +60,9 @@ double SquareSolver::solve(EllipseBundle &bundle) {
 
     Mesh inner_boundary = bundle.total_mesh();
     Mesh boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(inner_boundary);
+    boundary.export_to_file(tag::gmsh, "boundary_debug.msh"); //debug
+
     const Mesh domain = Mesh::Build(tag::frontal).boundary(boundary).desired_length(h);
-    
     std::map<Cell, size_t> numbering = create_numbering(domain);
 
     if (export_domain) { domain.export_to_file(tag::gmsh, "domain.msh"); }
@@ -87,9 +92,7 @@ double SquareSolver::solve(EllipseBundle &bundle) {
         }
     }
 
-    double area = x_max * y_max - bundle.area();
-
-    return objective_no_penalty(solution, numbering) + penalization * area; 
+    return objective_no_penalty(solution, numbering); 
 }
 
 std::map<Cell, size_t> SquareSolver::create_numbering(const Mesh& mesh) {
@@ -128,21 +131,22 @@ Eigen::VectorXd SquareSolver::build_laplace_solution(const Mesh &domain, const s
 
     matrix_A.reserve(Eigen::VectorXi::Constant(size_matrix, 8));
 
+
     //Construção do sistema
     {
     Mesh::Iterator it = domain.iterator(tag::over_cells_of_max_dim);
     for(it.reset(); it.in_range(); it++){
         Cell tri = *it;
-        fe_hand.dock_on(tri); //problema aqui
+        fe_hand.dock_on(tri);
         //Iterar duas vezes sob vértices
         Mesh::Iterator itV = tri.boundary().iterator(tag::over_vertices);
-        Mesh::Iterator itW = tri.boundary().iterator(tag::over_vertices);
-    
+
         for(itV.reset(); itV.in_range(); itV++){
             Cell V = *itV;
             Function phi_V = fe_hand.basis_function(V);
+            Mesh::Iterator itW = itV;
 
-            for(itW.reset(); itW.in_range(); itW++){
+            for(; itW.in_range(); itW++){
                 Cell W = *itW;
                 Function phi_W = fe_hand.basis_function(W);
 
@@ -150,7 +154,10 @@ Eigen::VectorXd SquareSolver::build_laplace_solution(const Mesh &domain, const s
                                               tag::replace, bf1, tag::by, phi_V,
                                               tag::replace, bf2, tag::by, phi_W);
 
-                matrix_A.coeffRef(numbering.at(V),numbering.at(W)) += result[0];
+                size_t idxV = numbering.at(V), idxW = numbering.at(W); 
+                matrix_A.coeffRef(idxV, idxW) += result[0];
+                //Check if it isn't in the diagonal
+                if (idxW != idxV) {matrix_A.coeffRef(idxW, idxV) += result[0];}
             }
         }
     }
@@ -171,6 +178,7 @@ Eigen::VectorXd SquareSolver::build_laplace_solution(const Mesh &domain, const s
         }
     }
     }
+
     //Condição de Dirichlet
     {
     Mesh::Iterator it = south.iterator(tag::over_vertices);
@@ -181,6 +189,7 @@ Eigen::VectorXd SquareSolver::build_laplace_solution(const Mesh &domain, const s
         impose_value_of_unknown(matrix_A, vector_b, i, base_temp);
     }
     }
+
     //Resolver sistema linear
     Eigen::ConjugateGradient <Eigen::SparseMatrix<double>,
                             Eigen::Lower | Eigen::Upper> cg;
@@ -188,8 +197,9 @@ Eigen::VectorXd SquareSolver::build_laplace_solution(const Mesh &domain, const s
     cg.compute(matrix_A);
 
     Eigen::VectorXd solution = cg.solve(vector_b);
-    if(cg.info() != Eigen::Success)
+    if(cg.info() != Eigen::Success) {
         std::cout << "Eigen solver failed" << std::endl;
+    }
 
     return solution;
 }

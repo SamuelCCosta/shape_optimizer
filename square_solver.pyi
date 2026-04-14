@@ -3,6 +3,7 @@ Bindings for Ellipse and SquareSolver using maniFEM
 """
 from __future__ import annotations
 import numpy
+import typing
 __all__ = ['Ellipse', 'EllipseBundle', 'SquareSolver']
 class Ellipse:
     bounds: numpy.ndarray[numpy.float64[2, 1]]
@@ -56,8 +57,11 @@ class SquareSolver:
     base_temp: float
     h: float
     heat_sources: float
-    penalization: float
-    def __init__(self, geometric_config: dict[str, float], h: float, heat_sources: float, base_temp: float, penalization: float, export_domain: bool, export_mesh: bool) -> None:
+    @typing.overload
+    def __init__(self, geometric_config: dict[str, float], h: float, heat_sources: float, base_temp: float, export_domain: bool, export_mesh: bool) -> None:
+        ...
+    @typing.overload
+    def __init__(self, geometric_config: dict[str, float], h: float, heat_sources: float, base_temp: float) -> None:
         ...
     def solve(self, bundle: EllipseBundle) -> float:
         ...

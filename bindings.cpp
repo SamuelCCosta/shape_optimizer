@@ -62,20 +62,24 @@ PYBIND11_MODULE(square_solver, m) {
     // --- SquareSolver Bindings ---
     py::class_<SquareSolver>(m, "SquareSolver")
         // Binding the constructor that uses doubles for boundary conditions
-        .def(py::init<std::map<std::string, double>&, const double, const double, const double, const double, const bool, const bool>(),
+        .def(py::init<std::map<std::string, double>&, const double, const double, const double, const bool, const bool>(),
              py::arg("geometric_config"), 
              py::arg("h"),
              py::arg("heat_sources"), 
              py::arg("base_temp"),
-             py::arg("penalization"), 
              py::arg("export_domain"), 
              py::arg("export_mesh"))
         
+        // No exports overload
+        .def(py::init<std::map<std::string, double>&, const double, const double, const double>(),
+             py::arg("geometric_config"), 
+             py::arg("h"),
+             py::arg("heat_sources"), 
+             py::arg("base_temp"))
         // Member variables (subset based on public visibility)
         .def_readwrite("h", &SquareSolver::h)
         .def_readwrite("heat_sources", &SquareSolver::heat_sources)
         .def_readwrite("base_temp", &SquareSolver::base_temp)
-        .def_readwrite("penalization", &SquareSolver::penalization)
         .def_readonly("export_domain", &SquareSolver::export_domain)
         .def_readonly("export_result", &SquareSolver::export_result)
 

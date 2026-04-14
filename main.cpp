@@ -5,41 +5,39 @@
 using namespace maniFEM;
 
 void objective_ellipses(){
-    const double h = 0.02;
+    const double h = 0.012;
+/*
+    h = 0.02 works
+    h = 0.018, h = 0.015 error 
+    ./src/mesh.h:5823: maniFEM::Cell::PositiveSegment::PositiveSegment
+    (maniFEM::Cell, maniFEM::Cell, const maniFEM::tag::OneDummyWrapper&): 
+    Assertion `Bb->segments .find (this) == Bb->segments .end()' failed.
+
+    h = 0.012 works
+
+    h = 0.011, h = 0.01 different error
+    src/frontal-2d.cpp:120: void {anonymous}::build_bridge(maniFEM::Cell&, std::set<maniFEM::Cell>&, const maniFEM::Mesh&, 
+    maniFEM::Mesh&, std::vector<typename environ::manif_type::winding_cell>&) [with environ = Environment<ManifoldNoWinding, 
+    ISRContainer::Inactive, ExtProd2d<ManifoldNoWinding, ISRContainer::Inactive> >; typename environ::manif_type::winding_cell = maniFEM::Cell; 
+    typename environ::manif_type = ManifoldNoWinding]: Assertion `false' failed.
+*/
+
     const double heat_source = 10.0; //condição neumann fronteira superior
     const double base_temp = 0.0; //condição dirichlet na base
-    const double penalization = 0.0; //penalização no volume
-    const size_t num_ellipses = 5;
+    const size_t num_ellipses = 4; //max number of ellipses
 
     std::map<std::string, double> geometric_info = {{"x_max", 1.0}, {"y_max", 1.0}, {"MW_x", 0.3}, {"ME_x", 0.7}};
 
-    bool export_domain = false, export_solution = false;
-    
-    SquareSolver sqs = SquareSolver(geometric_info, h, heat_source, base_temp, penalization, export_domain, export_solution);
+    //bool export_domain = false, export_solution = false;
+    //SquareSolver sqs = SquareSolver(geometric_info, h, heat_source, base_temp, export_domain, export_solution);
+
+    SquareSolver sqs = SquareSolver(geometric_info, h, heat_source, base_temp);
 
     EllipseBundle bundle(geometric_info, h, num_ellipses);
-    bundle.add(Ellipse(0.3, 0.3, 81.0, 15.0, 81.0));
-    /*
-    initial_params_tests = [
-        [0.5, 0.5, 25.0, 0, 25.0], #works
-        [0.3, 0.3, 81.0, 15.0, 81.0], #fails
-        [0.7, 0.7, 81.0, -15.0, 81.0] #fails
-    ]
-
-    src/frontal-2d.cpp:1318: void {anonymous}::frontal_construct_2d(maniFEM::Mesh&, const maniFEM::tag::Boundary&, const maniFEM::Mesh&, const maniFEM::tag::StartAt&, maniFEM::Cell)
-    [with environ = Environment<ManifoldNoWinding, ISRContainer::Inactive, ExtProd2d<ManifoldNoWinding, ISRContainer::Inactive> >]: Assertion `environ::manif_type::node_container .empty()' failed.
-
-    Provavelmente fica poluído do frontal meshing da fronteira?
-    */
-   
-    //bundle.add(Ellipse(0.4528497255555963, 0.5195018072130883, 255.24891698211133, -38.35196654400833, 262.5530482957416));
-    //std::cout << "ellipse 1 added" << std::endl;
-    //bundle.add(Ellipse(0.45017099450198184, 0.6923857353204883, 231.7094153654055, -47.15190162486053, 287.10515606531953));
-    //std::cout << "ellipse 2 added" << std::endl;
-    //bundle.add(Ellipse(0.5265268828586713, 0.33421315950352537, 293.72495839816185, -112.08640183253189, 204.51894409046088));
-    //std::cout << "ellipse 3 added" << std::endl;
-    //bundle.add(Ellipse(0.4319381994260433, 0.8739065566217921, 209.82444979164484, 67.87935546812955, 128.8843669760333));
-    //std::cout << "ellipse 4 added" << std::endl;
+    bundle.add(Ellipse(0.53446306, 0.50259374, 243.77396884, -33.96889496, 261.82802112));
+    bundle.add(Ellipse(0.42235164, 0.70059529, 233.99220896, -43.95489961, 288.09370986));
+    bundle.add(Ellipse(0.56719944, 0.34218724, 289.65241533, -106.94255163, 203.10652993));
+    bundle.add(Ellipse(0.46513083, 0.8759024, 208.72228596, 71.36566829, 130.41681181));
 
     double final_result = sqs.solve(bundle);
 
