@@ -5,7 +5,7 @@
 using namespace maniFEM;
 
 void objective_ellipses(){
-    const double h = 0.012;
+    const double h = 0.02;
 /*
     h = 0.02 works
     h = 0.018, h = 0.015 error 

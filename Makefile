@@ -12,7 +12,7 @@ MESH_FILE = solution.msh
 VIEW_OPTIONS = view-options.geo
 
 # compilation flags (do NOT forget to match with the ones that maniFEM was built with)
-CFLAGS = -O3
+CFLAGS = -O3 -march=x86-64-v3
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FEM
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FRONTAL
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_QUOTIENT
@@ -51,7 +51,7 @@ $(PYTHON_LIB): $(PY_OBJS)
 
 pylib: $(PYTHON_LIB)
 
-stubgen: 
+pystub: 
 	PYTHONPATH=. pybind11-stubgen square_solver -o .
 
 run_py: $(PYTHON_LIB)
@@ -96,4 +96,4 @@ profile-run: a.out.profile
 
 .SECONDARY:
 
-.PHONY: run clean reset clean_msh clean_all show_mesh profile profile_run run_py pylib stubgen
+.PHONY: run clean reset clean_msh clean_all show_mesh profile profile_run run_py pylib pystub
