@@ -8,7 +8,7 @@
 #include <Eigen/Dense>
 #include <numbers>
 
-constexpr double pi = std::numbers::pi;
+constexpr inline double pi = std::numbers::pi;
 
 // Class of ellipses with eccentricity < 0.93
 class Ellipse {
@@ -103,7 +103,6 @@ class EllipseBundle {
             for (const auto &ellipse : bundle) {
                 mesh_bundle.push_back(ellipse.get_mesh(h));
             }
-
             return Mesh::Build(tag::join).meshes(mesh_bundle);
         }
 

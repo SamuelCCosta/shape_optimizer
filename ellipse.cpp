@@ -76,6 +76,7 @@ bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const
     const int max_iterations = 10;
     
     auto [theta1, theta2] = starting_parameters(e1, e2);
+    std::cout << "starting parameters: " << theta1 << " " << theta2 << std::endl;
     
     for (int i = 0; i < max_iterations; i++) {
         // Useful numbers
@@ -86,18 +87,19 @@ bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const
         Eigen::Vector2d P2 = e2.point_at(Eigen::Vector2d(cos_2, sin_2));
 
         // Sanity check: are the points outside of the other ellipse?
-        if (e2.is_inside(P1) || e1.is_inside(P2)) return true;
+        if (e2.is_inside(P1) || e1.is_inside(P2)) {return true;}
 
         // Check if the distance^2 between points is less than h^2
         Eigen::Vector2d difference = P1 - P2;
-        if (difference.squaredNorm() <= h_sq) return true;
+        std::cout << "dist: " << difference.squaredNorm() << std::endl;
+        if (difference.squaredNorm() <= h_sq) {return true;}
 
         Eigen::Vector2d P_prime_1 = e1.derivative_at(Eigen::Vector2d(- sin_1, cos_1));
         Eigen::Vector2d P_prime_2 = e2.derivative_at(Eigen::Vector2d(- sin_2, cos_2));
 
         // (dot_1,dot_2) are the functions we are trying to equal to zero
         double dot_1 = difference.dot(P_prime_1), dot_2 = difference.dot(P_prime_2);
-        if (std::abs(dot_1) < eps && std::abs(dot_2) < eps) break; //optimization is complete
+        if (std::abs(dot_1) < eps && std::abs(dot_2) < eps) {break;} //optimization is complete
 
         // Update theta1 and theta2
         Eigen::Vector2d P_doubleprime_1 = e1.second_derivative_at(Eigen::Vector2d(- cos_1, - sin_1));
@@ -107,8 +109,11 @@ bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const
         double H00 = P_prime_1.squaredNorm() + difference.dot(P_doubleprime_1);
         double H01 = - P_prime_1.dot(P_prime_2);
         double H11 = P_prime_2.squaredNorm() - difference.dot(P_doubleprime_2);
+        std::cout << "matrix entries: " << H00 << " " << H01 << " " << H11 << std::endl;
 
         double hessian_determinant = H00 * H11 - H01 * H01;
+        std::cout << "det: " << hessian_determinant << std::endl;
+
         if (std::abs(hessian_determinant) < eps) return true; //Degenerate Hessian
 
         // Solve linear system with Cramer's Rule
@@ -127,15 +132,16 @@ bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const
     Eigen::Vector2d P2 = e2.point_at(theta2);
 
     // Sanity check: are the points outside of the other ellipse?
-    if (e2.is_inside(P1) || e1.is_inside(P2)) return true;
+    if (e2.is_inside(P1) || e1.is_inside(P2)) {return true;}
 
     // Check if the distance^2 between points is less than h^2
+    std::cout << (P1-P2).squaredNorm() << std::endl;
     return (P1 - P2).squaredNorm() <= h_sq;
 }
 
 std::pair<double, double> EllipseBundle::starting_parameters(const Ellipse &e1, const Ellipse &e2) const {
-    double theta1 = 0,theta2 = 0;
-    double min_start_dist_sq = 1e10;
+    /*double theta1 = 0,theta2 = 0;
+    double min_start_dist_sq = 1e10;*/
 
     //center test
     const Eigen::Vector2d diff = e2.center - e1.center;
@@ -143,20 +149,29 @@ std::pair<double, double> EllipseBundle::starting_parameters(const Ellipse &e1, 
     //parameter for e1
     Eigen::Vector2d dir1 = e1.parametrize_matrix.inverse() * diff;
     double t1_center = std::atan2(dir1.y(), dir1.x());
+    double theta1 = t1_center;
+    std::cout << "theta1: " << theta1 << std::endl;
+
 
     //parameter for e2
     Eigen::Vector2d dir2 = e2.parametrize_matrix.inverse() * (-diff);
     double t2_center = std::atan2(dir2.y(), dir2.x());
+    double theta2 = t2_center;
+    std::cout << "theta2: " << theta2 << std::endl;
+
 
     Eigen::Vector2d p1 = e1.point_at(t1_center);
     Eigen::Vector2d p2 = e2.point_at(t2_center);
     double dist_sq = (p1-p2).squaredNorm();
+    double min_start_dist_sq = dist_sq;
 
+    /*
     if (dist_sq <= min_start_dist_sq) {
         min_start_dist_sq = dist_sq;
         theta1 = t1_center;
         theta2 = t2_center;
     }
+    */
 
     const std::vector<double> e1_adj_angles = adjacent_angles(t1_center);
     const std::vector<double> e2_adj_angles = adjacent_angles(t2_center);
@@ -183,8 +198,7 @@ std::vector<double> EllipseBundle::adjacent_angles(const double theta) const {
     const std::vector<double> angles = {0.0, pi/2, pi, 3 * pi / 2};
     const double two_over_pi = 2.0 / pi;
 
-    int index = static_cast<int>(theta * two_over_pi); //floors the result when casting
-    index = index % 4; //range of atan is [-pi,pi]
-
-    return {angles[index], angles[(index + 1) % 4]};
+    int index = static_cast<int>(std::floor(theta * two_over_pi)); //floors the result when casting
+    index = (index % 4 + 4) % 4; //range of atan is [-pi,pi]
+    return {angles[index], angles[(index + 1) % 4], theta};
 }
