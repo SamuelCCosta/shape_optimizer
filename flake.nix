@@ -62,13 +62,14 @@ outputs = { self, nixpkgs }: {
                 '';
             };
 
-            python-with-packages = pkgs.python3.withPackages (ps: [
-                ps.pandas
-                ps.pybind11
-                ps.pybind11-stubgen
-                ps.matplotlib
-                ps.pebble
-                ps.numpy
+            python-with-packages = pkgs.python3.withPackages (ps: with ps; [
+                pandas
+                pybind11
+                pybind11-stubgen
+                matplotlib
+                pebble
+                numpy
+                scipy
             ]);
 
         in

@@ -12,7 +12,7 @@ MESH_FILE = solution.msh
 VIEW_OPTIONS = view-options.geo
 
 # compilation flags (do NOT forget to match with the ones that maniFEM was built with)
-CFLAGS = -O3 -march=x86-64-v3
+CFLAGS = -O3 -march=x86-64-v3 #-fopt-info-vec-optimized
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FEM
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_FRONTAL
 # CFLAGS := $(CFLAGS) -DMANIFEM_NO_QUOTIENT

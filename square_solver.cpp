@@ -60,7 +60,7 @@ double SquareSolver::solve(EllipseBundle &bundle) {
 
     Mesh inner_boundary = bundle.total_mesh();
     Mesh boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(inner_boundary);
-    boundary.export_to_file(tag::gmsh, "boundary_debug.msh"); //debug
+    //boundary.export_to_file(tag::gmsh, "boundary_debug.msh"); //debug
 
     const Mesh domain = Mesh::Build(tag::frontal).boundary(boundary).desired_length(h);
     std::map<Cell, size_t> numbering = create_numbering(domain);
@@ -144,8 +144,8 @@ Eigen::VectorXd SquareSolver::build_laplace_solution(const Mesh &domain, const s
         for(itV.reset(); itV.in_range(); itV++){
             Cell V = *itV;
             Function phi_V = fe_hand.basis_function(V);
-            Mesh::Iterator itW = itV;
 
+            Mesh::Iterator itW = itV;
             for(; itW.in_range(); itW++){
                 Cell W = *itW;
                 Function phi_W = fe_hand.basis_function(W);
@@ -210,9 +210,11 @@ void SquareSolver::impose_value_of_unknown(Eigen::SparseMatrix<double> &matrix_A
 	size_t size_matrix = matrix_A .innerSize();
 
 	// apagar linha i (cell_id = i)
-	for ( size_t j = 0; j < size_matrix; j++ )
-		if ( matrix_A .coeff ( cell_id, j ) != 0. )
+	for ( size_t j = 0; j < size_matrix; j++ ) {
+		if ( matrix_A .coeff ( cell_id, j ) != 0. ) {
 			matrix_A .coeffRef ( cell_id, j ) = 0.;
+        }
+    }
 
 	// apagar coluna i e mudar vetor
 	for ( size_t j = 0; j < size_matrix; j++ )
