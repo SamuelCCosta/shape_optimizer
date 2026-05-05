@@ -6,9 +6,10 @@ import multiprocessing as mp
 from multiprocessing.pool import Pool
 from multiprocessing.connection import wait
 from pebble import concurrent
-import sqlite3
-import json
 import time
+import copy
+import itertools
+from db_utils import database_writer, get_column_names_dict, unfold_parameters
 
 
 class EllipseSA(BaseSimulatedAnnealing):
@@ -18,6 +19,7 @@ class EllipseSA(BaseSimulatedAnnealing):
         self.geometric_params = geometric_params
         self.num_ellipses = geometric_params['num_ellipses']
         self.scales = scales * self.num_ellipses
+        self.initial_state = []
 
         #penalization related
         self.full_area = geometric_params['geometric_config']['x_max'] * geometric_params['geometric_config']['y_max']
@@ -45,81 +47,128 @@ class EllipseSA(BaseSimulatedAnnealing):
     def get_neighbour(self, state):
         noise = [random.normalvariate(0.0, 1.0) * scale for scale in self.scales]
         return [s + n for s, n in zip(state, noise)]
-
-
-def database_writer(queue : mp.Queue, column_names : dict, db_path = "experiments.db"):
-    '''Given a queue, listens indefinitely and writes to the database when the queue is non empty.
-       The function terminates when a None object is inserted in the queue.'''
     
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    #Table creation with the columns we want
-    columns_definitions = ['run_id INTEGER PRIMARY KEY AUTOINCREMENT']
-    for name, sql_type in column_names.items():
-        if sql_type in ('REAL','INTEGER','TEXT'):
-            columns_definitions.append(f'{name} {sql_type}')
-        else: #assume is real
-            columns_definitions.append(f'{name} REAL')
-    
-    sql_make_table = f'CREATE TABLE IF NOT EXISTS results ({', '.join(columns_definitions)})'
-    cursor.execute(sql_make_table)
-    conn.commit()
-
-    while True:
-        record = queue.get() #dict with column name and value or None
-
-        if record is None: #end of workers
-            break
+    def raw_generation_function(self):
+        '''Generates a random valid configuration, evaluates it, and returns cost & state.'''
+        sqs = SquareSolver(**self.sqs_params)
+        ellipses = EllipseBundle(**self.ellipse_bundle_params)
         
-        columns = list(record.keys())
-        columns_sql = ', '.join(columns)
-        placeholders_sql = ', '.join([f':{col}' for col in columns])
-
-        insert_sql = f'INSERT INTO results ({columns_sql}) VALUES ({placeholders_sql})'
-        cursor.execute(insert_sql, record)
-        conn.commit()
-
-    conn.close()
-
-
-def get_column_names_dict(geometric_params : dict, penalizations : dict, kwargs_optimization : dict, paramtype = list):
-    '''Get a dict where column names map to their respective SQL type. Between optimization specific arguments and
-    geometric configuration, includes the columns 'runtime', 'best_param', 'best_cost', 'initial_params', 'scales'.
-    '''
-    # Sort which types are mapped to SQL types, default to 'TEXT'
-    sql_type = {int : 'INTEGER', float : 'REAL'}
-    def get_sql_type(val):
-        if isinstance(val, type):
-            return sql_type.get(val, 'TEXT')
-        return sql_type.get( type(val), 'TEXT')
+        ellipses.generate_random()
+        
+        if len(ellipses.bundle) < self.num_ellipses:
+            return float('inf'), None
+            
+        state = []
+        for e in ellipses.bundle:
+            state.extend([e.center[0], e.center[1], e.quadratic_form[0,0], e.quadratic_form[0,1], e.quadratic_form[1,1]])
+            
+        try:
+            area_percent = (self.full_area - ellipses.area()) / self.full_area
+            cost = sqs.solve(ellipses) + self.linear_penalization * area_percent #OBJECTIVE FUNCTION
+            return cost, state
+        except Exception:
+            return float('inf'), None
     
-    clean_kwargs_optimization = {k : get_sql_type(v) for k, v in kwargs_optimization.items()}
+    def get_initial_state(self):
+        while self.initial_state == []:
+            try:
+                with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
+                    future = pool.schedule(self.raw_generation_function, timeout=2.0)
+                    cost, state = future.result() # type: ignore
+                    if cost != float('inf'):
+                        self.initial_state = state
+            except Exception:
+                pass # Ignore timeouts and crashes, try again
 
-    param_SQL_type = get_sql_type(paramtype)
-    middle = {'runtime' : 'REAL', 'best_param' : param_SQL_type, 'best_cost' : 'REAL',
-              'initial_params' : param_SQL_type, 'scales' : param_SQL_type}
 
-    clean_penalizations = {k + '_penalization' : 'REAL' for k,v in penalizations.items()}
+class EllipseDSA(DirectSimulatedAnnealing):
+    '''Direct SA algorithm'''
+    def __init__(self, scales, geometric_params : dict, penalizations : dict, **kwargs):
+        super().__init__(**kwargs)
+        self.geometric_params = geometric_params
+        self.num_ellipses = geometric_params['num_ellipses']
+        self.scales = scales * self.num_ellipses
 
-    flat_geo = {}
-    for k, v in geometric_params.items():
-        if isinstance(v, dict):
-            flat_geo |= v
-        else:
-            flat_geo[k] = v
+        #penalization related
+        self.full_area = geometric_params['geometric_config']['x_max'] * geometric_params['geometric_config']['y_max']
+        self.linear_penalization = penalizations['linear']
+
+        #keyword parameters for solver / bundle constructors
+        self.sqs_params = {k: v for k, v in geometric_params.items() if k not in ("num_ellipses")}
+        self.ellipse_bundle_params = {k: geometric_params[k] for k in ["geometric_config", "h", "num_ellipses"]}
     
-    clean_geometric_params = {k : get_sql_type(v) for k, v in flat_geo.items()}
+    def raw_cost_function(self, state) -> float:
+        '''Get full cost, including (linear) penalization.'''
+        sqs = SquareSolver(**self.sqs_params)
+        ellipses = EllipseBundle(**self.ellipse_bundle_params)
+        n_param = 5 #ellipse parameter number
+        try:
+            for i in range(self.num_ellipses):
+                idx = i * n_param
+                ellipses.add(Ellipse(state[idx], state[idx + 1], state[idx + 2],
+                                    state[idx + 3], state[idx + 4]))
+            area_percent = (self.full_area - ellipses.area()) / self.full_area
+            return sqs.solve(ellipses) + self.linear_penalization * area_percent #OBJECTIVE FUNCTION
+        except: #invalid configuration
+            return float('inf')
     
-    return clean_kwargs_optimization | middle | clean_penalizations | clean_geometric_params
+    def get_neighbour(self, state):
+        noise = [random.normalvariate(0.0, 1.0) * scale for scale in self.scales]
+        return [s + n for s, n in zip(state, noise)]
+    
+    def raw_generation_function(self):
+        '''Generates a random valid configuration, evaluates it, and returns cost & state.'''
+        sqs = SquareSolver(**self.sqs_params)
+        ellipses = EllipseBundle(**self.ellipse_bundle_params)
+        
+        ellipses.generate_random()
+        
+        if len(ellipses.bundle) < self.num_ellipses:
+            return float('inf'), None
+            
+        state = []
+        for e in ellipses.bundle:
+            state.extend([e.center[0], e.center[1], e.quadratic_form[0,0], e.quadratic_form[0,1], e.quadratic_form[1,1]])
+            
+        try:
+            area_percent = (self.full_area - ellipses.area()) / self.full_area
+            cost = sqs.solve(ellipses) + self.linear_penalization * area_percent #OBJECTIVE FUNCTION
+            return cost, state
+        except Exception:
+            return float('inf'), None
+
+    def get_starting_configs(self):
+        self.configurations = []
+        print(f"Generating {self.num_configs} starting configurations...")
+        while len(self.configurations) < self.num_configs:
+            try:
+                with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
+                    future = pool.schedule(self.raw_generation_function, timeout=2.0)
+                    cost, state = future.result() # type: ignore
+                    if cost != float('inf') and state is not None:
+                        self.configurations.append((cost, state))
+            except Exception:
+                pass # Ignore timeouts and crashes, try again
+        self.configurations.sort()
+
+    def test_generation(self):
+        self.get_starting_configs()
+        print(len(self.configurations), self.configurations)
 
 
-def optimization_worker(queue : mp.Queue, scales : list, geometric_params : dict, 
+def optimization_worker_SA(queue : mp.Queue, scales : list, geometric_params : dict, 
                         penalizations : dict, initial_params : list, kwargs_SA : dict):
     '''Defines the routine of an optimization worker'''
     solver = EllipseSA(scales, geometric_params, penalizations, **kwargs_SA)
+    
+    if initial_params == []:
+        solver.get_initial_state()
+        actual_initial_params = solver.initial_state
+    else:
+        actual_initial_params = initial_params
+    print(actual_initial_params)
     start_time = time.time()
-    best_param, best_cost = solver.run(initial_params)
+    best_param, best_cost = solver.run(actual_initial_params)
     runtime = time.time() - start_time
 
     # Get all the values into the SQL queue
@@ -127,7 +176,7 @@ def optimization_worker(queue : mp.Queue, scales : list, geometric_params : dict
     run_parameters['runtime'] = runtime
     run_parameters['best_param'] = best_param
     run_parameters['best_cost'] = best_cost
-    run_parameters['initial_params'] = initial_params
+    run_parameters['initial_params'] = actual_initial_params
     run_parameters['scales'] = scales
 
     for pen_type in penalizations:
@@ -139,69 +188,89 @@ def optimization_worker(queue : mp.Queue, scales : list, geometric_params : dict
 
     queue.put(run_parameters)
 
-def unfold_parameters(parameters : dict):
-    '''From a dictionary, unfolds dictionary values, if the value is a list or tuple outputs a JSON string. '''
-    output = {}
-    for k, v in parameters.items():
-        if isinstance(v, dict):
-            output |= v
-        else:
-            output[k] = v
-    
-    for key, val in output.items():
-        if isinstance(val, (list, tuple)):
-            output[key] = json.dumps(val)
-    
-    return output
-    
-if __name__ == '__main__':
-    geometric_params = {
-        "geometric_config": {'x_max': 3.0, 'y_max': 2.0, 'MW_x': 0.3, 'ME_x': 0.7},
-        "h": 0.02,
-        "heat_sources": 10.0,
-        "base_temp": 0.0,
-        "num_ellipses": 1
+def optimization_worker_DSA(queue : mp.Queue, scales : list, geometric_params : dict, 
+                        penalizations : dict, kwargs_DSA : dict):
+    '''Defines the routine of a DSA optimization worker'''
+    solver = EllipseDSA(scales, geometric_params, penalizations, **kwargs_DSA)
+    start_time = time.time()
+    best_cost, best_param = solver.run() # DSA returns (cost, state)
+    runtime = time.time() - start_time
+
+    # Get all the values into the SQL queue
+    run_parameters = kwargs_DSA.copy()
+    run_parameters['runtime'] = runtime
+    run_parameters['best_param'] = best_param
+    run_parameters['best_cost'] = best_cost
+    run_parameters['initial_params'] = [state for cost, state in solver.configurations]
+    run_parameters['scales'] = scales
+
+    for pen_type in penalizations:
+        run_parameters[pen_type + '_penalization'] = penalizations[pen_type]
+    run_parameters |= geometric_params
+
+    #Convert all non-number values into JSON strings
+    run_parameters = unfold_parameters(run_parameters)
+
+    queue.put(run_parameters)
+
+def run_experiments(worker_target, geometric_params, penalizations, kwargs_optimization, scales, extra_worker_args=(), db_path='experiments.db', table_name='results', max_processes=10):
+    config_bundle = {
+        'geometric_params': geometric_params,
+        'penalizations': penalizations,
+        'kwargs_optimization': kwargs_optimization
     }
     
-    penalizations = {
-        "linear" : 0.0,
-    } #quadratic to be implemented
+    paths = []
+    sweep_lists = []
+    
+    def traverse(obj, path):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                traverse(v, path + [k])
+        elif isinstance(obj, list):
+            paths.append(path)
+            sweep_lists.append(obj)
+            
+    traverse(config_bundle, [])
+    
+    combinations = []
+    for combo in itertools.product(*sweep_lists):
+        new_bundle = copy.deepcopy(config_bundle)
+        for path, val in zip(paths, combo):
+            target = new_bundle
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = val
+        combinations.append(new_bundle)
+        
+    if not combinations:
+        print("No combinations to run.")
+        return
 
-    kwargs_SA = {
-        'initial_temp' : 1000,
-        'min_temp' : 0.0001,
-        'cooling_rate' : 0.99
-    }
-
-    #set up optimizations
-    initial_params = [0.5, 0.5, 25.0, 0, 25.0]
-    scales = [0.1, 0.1, 5.0, 25.0, 5.0] 
-
-
-    #database setup
-    column_names = get_column_names_dict(geometric_params = geometric_params, penalizations=penalizations,
-                                         kwargs_optimization= kwargs_SA, paramtype=list)
+    first_bundle = combinations[0]
+    column_names = get_column_names_dict(
+        geometric_params=first_bundle['geometric_params'],
+        penalizations=first_bundle['penalizations'],
+        kwargs_optimization=first_bundle['kwargs_optimization'],
+        paramtype=list
+    )
+    
     spawn_ctx = mp.get_context('spawn')
     queue = spawn_ctx.Queue()
-    db_writer = spawn_ctx.Process(target=database_writer, args=(queue, column_names))
+    db_writer = spawn_ctx.Process(target=database_writer, args=(queue, column_names, db_path, table_name))
     db_writer.start()
 
-    linear_penalization_list = [128.0]
-    
-    max_processes = 10
     active_workers = []
 
-    for penalization in linear_penalization_list:
+    for combo_bundle in combinations:
         if len(active_workers) >= max_processes:
             sentinels = [w.sentinel for w in active_workers]
             wait(sentinels)
             active_workers = [w for w in active_workers if w.is_alive()]
 
-        task_penalizations = penalizations.copy()
-        task_penalizations['linear'] = penalization
-        
-        w = spawn_ctx.Process(target=optimization_worker, 
-                              args=(queue, scales, geometric_params, task_penalizations, initial_params, kwargs_SA))
+        w = spawn_ctx.Process(target=worker_target, 
+                              args=(queue, scales, combo_bundle['geometric_params'], 
+                              combo_bundle['penalizations'], *extra_worker_args, combo_bundle['kwargs_optimization']))
         w.start()
         active_workers.append(w)
     
@@ -211,6 +280,42 @@ if __name__ == '__main__':
     queue.put(None)
     db_writer.join()
     print('Done')
+
+
+if __name__ == '__main__':
+    geometric_params = {
+        "geometric_config": {'x_max': [1.0, 2.0], 'y_max': [1.0, 2.0], 'MW_x': 0.3, 'ME_x': 0.7},
+        "h": 0.02,
+        "heat_sources": 10.0,
+        "base_temp": 0.0,
+        "num_ellipses": 2
+    }
+    
+    penalizations ={
+        'linear' : 256.0
+    }
+
+    kwargs_SA = {
+        'initial_temp' : 100,
+        'min_temp' : 0.01,
+        'cooling_rate' : 0.99
+    }
+    
+    kwargs_DSA = {
+        'initial_temp' : 1000.0, 'min_temp' : 0.0001,
+        'cooling_rate_max' : 0.999, 'cooling_rate_min' : 0.99,
+        'base_markov_length' : 50, 'num_configs' : 10,
+        'initial_perturbation' : 0.05, 'min_perturbation' : 0.01, 
+        'min_cost_gap' : 0.0001
+    }
+
+    #set up optimizations
+    #initial_params = [0.5, 0.5, 25.0, 0, 25.0]
+    initial_params = []
+    scales = [0.1, 0.1, 5.0, 10.0, 5.0]
+
+    run_experiments(optimization_worker_SA, geometric_params, penalizations, kwargs_SA, scales, extra_worker_args=(initial_params,), db_path = 'test.db', table_name='results', max_processes=10)
+    
 
     '''
     Geometric info (constant in every optimization) : geometric_params

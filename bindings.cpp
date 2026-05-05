@@ -56,6 +56,8 @@ PYBIND11_MODULE(square_solver, m) {
 
         // Methods
         .def("add", &EllipseBundle::add, py::arg("new_ellipse"))
+        .def("generate_random", &EllipseBundle::generate_random, 
+             py::arg("seed") = 0, py::arg("max_attempts") = 10000)
         .def("area", &EllipseBundle::area);
 
 

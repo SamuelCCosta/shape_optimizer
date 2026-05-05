@@ -6,7 +6,6 @@
 #include <string>
 #include <numbers>
 #include <Eigen/Dense>
-#include <numbers>
 
 constexpr inline double pi = std::numbers::pi;
 
@@ -80,15 +79,19 @@ class EllipseBundle {
         std::vector<Ellipse> bundle;
         const double x_max, y_max, MW_x, ME_x;
         const double h;
+        const size_t num_ellipses;
 
-        EllipseBundle(std::map<std::string, double> &geometric_config, const double h_param, const size_t num_ellipses) :
+        EllipseBundle(std::map<std::string, double> &geometric_config, const double h_param, const size_t n_ellipses) :
         x_max(geometric_config["x_max"]), y_max(geometric_config["y_max"]), MW_x(geometric_config["MW_x"]),
-        ME_x(geometric_config["ME_x"]), h(h_param) {bundle.reserve(num_ellipses);}
+        ME_x(geometric_config["ME_x"]), h(h_param), num_ellipses(n_ellipses) {bundle.reserve(n_ellipses);}
             
         void add(const Ellipse &new_ellipse){
             check_intersections(new_ellipse);
             bundle.push_back(new_ellipse);
         }
+
+        // Tries to insert random valid configurations until num_ellipses is reached
+        void generate_random(unsigned int seed = 0, size_t max_attempts = 10000);
 
         const double area() const {
             double total = 0;

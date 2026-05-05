@@ -118,7 +118,7 @@ class DirectSimulatedAnnealing(ABC):
         pass
 
     @abstractmethod
-    def get_starting_configs(self) -> list:
+    def get_starting_configs(self):
         '''Get starting configuration to start the optimization process'''
         pass
 
@@ -186,7 +186,8 @@ class DirectSimulatedAnnealing(ABC):
 
     def run(self):
         '''The main optimization loop, returns a tuple with best cost and best configuration.'''
-        self.configurations = self.get_starting_configs()
+        if len(self.configurations) != self.num_configs:
+            self.get_starting_configs()
 
         while (self.perturbation > self.min_perturbation) or (self.temp > self.min_temp) or (self.cost_gap() >  self.min_cost_gap):
             self.current_markov_length = self.markov_length()
@@ -215,7 +216,8 @@ class DirectSimulatedAnnealing(ABC):
                 self.update_perturbation()
             self.effective_past_markov_length = length
         
-        return self.configurations[0]
+        return (self.configurations[0][1], self.configurations[0][0])
+
 
 
 if __name__ == '__main__':

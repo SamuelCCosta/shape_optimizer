@@ -1,4 +1,6 @@
 #include "ellipse.h"
+#include <iostream>
+#include <random>
 
 Ellipse::Ellipse(double x, double y, double A, double B, double C) {
     this-> quadratic_form << A, B, B, C;
@@ -54,7 +56,8 @@ bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2) const {
     if (e1.evaluate_at(e2.center) <= 1.0) {return true;}
 
     // Semi-Inexpensive: bounding boxes
-    Eigen::Vector2d h_vec(h,h);
+    constexpr double three_halfs = 1.5;
+    Eigen::Vector2d h_vec(three_halfs * h, three_halfs * h);
 
     Eigen::Vector2d e1_bottom_left = e1.center - e1.bounds;
     Eigen::Vector2d e1_top_right = e1.center + e1.bounds;
@@ -72,10 +75,10 @@ bool EllipseBundle::intersects(const Ellipse &e1, const Ellipse &e2) const {
 
 bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const {
     constexpr bool ROBUST_INTERSECT_VERBOSITY = false;
-    const double h_sq = h * h;
+    const double three_halfs_times_h_sq = 1.5 * h * h;
 
     if (ROBUST_INTERSECT_VERBOSITY) {
-    std::cout << "target dist^2: " << h_sq << std::endl;
+    std::cout << "target dist^2: " << three_halfs_times_h_sq << std::endl;
     }
 
     // stopping criterion
@@ -97,7 +100,7 @@ bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const
         Eigen::Vector2d P1 = e1.point_at(theta1);
         Eigen::Vector2d P2 = e2.point_at(theta2);
 
-        // Sanity check: are the points outside of the other ellipse?
+        // Early exit
         if (e2.is_inside(P1) || e1.is_inside(P2)) {return true;}
 
         // Check if the distance^2 between points is less than h^2
@@ -105,7 +108,8 @@ bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const
         if (ROBUST_INTERSECT_VERBOSITY) {
         std::cout << "dist^2: " << difference.squaredNorm() << std::endl;
         }
-        if (difference.squaredNorm() <= h_sq) {return true;}
+        // Early exit
+        if (difference.squaredNorm() <= three_halfs_times_h_sq) {return true;}
 
         Eigen::Vector2d P_prime_1 = e1.derivative_at(theta1);
         Eigen::Vector2d P_prime_2 = e2.derivative_at(theta2);
@@ -115,17 +119,17 @@ bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const
         jacobian << P_prime_1, - P_prime_2;
 
         // Gauss-Newton approximate hessian
-        Eigen::Matrix2d hessian_mat = jacobian.transpose() * jacobian; //TODO: make it so it doesn't need to square the condition number
+        Eigen::Matrix2d hessian_mat = jacobian.transpose() * jacobian; //TODO: make it so it doesn't square the condition number
         Eigen::Vector2d gradient = jacobian.transpose() * difference;
 
-        // check if gradient is small
+        // Stopping criteria: check if gradient is small
         if (gradient.squaredNorm() < eps) {break;}
 
         // Apply Levenberg-Marquardt damping and solve the linear system
         Eigen::Matrix2d hessian_LM = hessian_mat + lambda * Eigen::Matrix2d::Identity(); //could be hessian_mat + lambda * diag(hessian_mat)
         Eigen::Vector2d delta = hessian_LM.ldlt().solve(-gradient);
 
-        // check if move is small
+        // Stopping criteria: check if move is small
         if (delta.squaredNorm() < eps) {break;}
 
         double theta_test_1 = theta1 + delta(0);
@@ -149,8 +153,10 @@ bool EllipseBundle::robust_intersect(const Ellipse &e1, const Ellipse &e2) const
     if (e2.is_inside(P1) || e1.is_inside(P2)) {return true;}
 
     // Check if the distance^2 between points is less than h^2
-    std::cout << (P1-P2).squaredNorm() << std::endl;
-    return (P1 - P2).squaredNorm() <= h_sq;
+    if (ROBUST_INTERSECT_VERBOSITY) {
+        std::cout << "final dist^2: " << (P1-P2).squaredNorm() << std::endl;
+    }
+    return (P1 - P2).squaredNorm() <= three_halfs_times_h_sq;
 }
 
 std::pair<double, double> EllipseBundle::starting_parameters(const Ellipse &e1, const Ellipse &e2) const {
@@ -201,4 +207,42 @@ std::vector<double> EllipseBundle::adjacent_angles(const double theta) const {
     int index = static_cast<int>(std::floor(theta * two_over_pi));
     index = (index % 4 + 4) % 4; //range of atan is [-pi,pi]
     return {angles[index], angles[(index + 1) % 4], theta};
+}
+
+void EllipseBundle::generate_random(unsigned int seed, size_t max_attempts) {
+    std::mt19937 gen;
+    if (seed != 0) {
+        gen.seed(seed);
+    } else {
+        std::random_device rd;
+        gen.seed(rd());
+    }
+
+    // Ranges based on typical values for your geometric configuration
+    std::uniform_real_distribution<> dist_x(h, x_max - h);
+    std::uniform_real_distribution<> dist_y(h, y_max - h);
+    // TODO: change how those work depend on domain
+    std::uniform_real_distribution<> dist_AC(10.0, 300.0);
+    std::uniform_real_distribution<> dist_B(-100.0, 100.0);
+
+    size_t attempts = 0;
+    while (bundle.size() < num_ellipses && attempts < max_attempts) {
+        attempts++;
+        double x = dist_x(gen);
+        double y = dist_y(gen);
+        double A = dist_AC(gen);
+        double B = dist_B(gen);
+        double C = dist_AC(gen);
+
+        try {
+            this->add(Ellipse(x, y, A, B, C));
+        } catch (const std::invalid_argument&) {
+            // Silently ignore it and let the loop try again
+        }
+    }
+    
+    if (bundle.size() < num_ellipses) {
+        std::cerr << "Warning: Reached max attempts (" << max_attempts 
+                  << ") before placing all ellipses. Total: " << bundle.size() << "\n";
+    }
 }
