@@ -112,10 +112,13 @@ def test_average_runtime(geometric_info, h, num_ellipses, seed, iteration_count)
 if __name__ == '__main__':
     geometric_info = {'x_max': 1.0, 'y_max': 1.0, 'MW_x': 0.3, 'ME_x': 0.7}
     h = 0.02
-    num_ellipses = 1
+    num_ellipses = 4
     seed = 0 # 0 = NO SEED
     iteration_count = 100
     '''nums_ellipses = [4,8,12]
     for n_ellipses in nums_ellipses:
         test_average_runtime(geometric_info, h, n_ellipses, seed, iteration_count)'''
+    #test_random_generation(geometric_info, h, num_ellipses, seed)
+    
+
     test_average_runtime(geometric_info, h, num_ellipses, seed, iteration_count)

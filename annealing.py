@@ -4,13 +4,15 @@ import random
 import multiprocessing as mp
 from pebble import ProcessPool
 from typing import Any
+import csv
+import json
 
 spawn_ctx = mp.get_context('spawn') #fork context (default on linux) can lead to some issues
 
 class BaseSimulatedAnnealing(ABC):
     '''Regular Simulated Annealing algorithm, with geometric temperature reduction'''
 
-    def __init__(self, initial_temp = 1000.0, min_temp = 0.001, cooling_rate = 0.95):
+    def __init__(self, initial_temp = 1000.0, min_temp = 0.001, cooling_rate = 0.95, track_file_name : str | None = None):
         self.initial_temp = initial_temp
         self.temp = initial_temp
         self.min_temp = min_temp
@@ -18,6 +20,11 @@ class BaseSimulatedAnnealing(ABC):
         #track best state and energy
         self.best_state = None
         self.best_cost = float('inf')
+        self.track_states = track_file_name is not None
+        if self.track_states:
+            #tuples of type (temp, cost, accept prob, random number, passed, is_best, param)
+            self.states = []
+            self.track_file_name = track_file_name
 
     @abstractmethod
     def get_neighbour(self, state) -> Any:
@@ -36,7 +43,7 @@ class BaseSimulatedAnnealing(ABC):
                 future = pool.schedule(self.raw_cost_function, args=[state], timeout=2.0)
                 return future.result() #type: ignore #Pylance is not smart enough to know it returns a Future object
         except Exception as e:
-            print(repr(e))
+            #print(repr(e))
             return float('inf')
     
     def acceptance_probability(self, old_cost, new_cost):
@@ -50,6 +57,25 @@ class BaseSimulatedAnnealing(ABC):
         self.temp *= self.cooling_rate
         return None
     
+    def write_csv(self):
+        '''Writes the CSV with all informations related to the run, if track_file_name is defined'''
+        if self.track_states:
+            with open(self.track_file_name, 'w', newline='') as f:
+                writer = csv.writer(f)
+                # Header based on the tuple structure in run()
+                writer.writerow(['temp', 'cost', 'accept_prob', 'random_number', 'accepted', 'is_best', 'param'])
+                for state_row in self.states:
+                    # Convert any numpy types to standard python types for CSV/JSON compatibility
+                    row = []
+                    for item in state_row:
+                        if isinstance(item, (np.floating, np.integer)):
+                            item = item.item()
+                        row.append(item)
+                    row[-1] = json.dumps(row[-1])
+                    writer.writerow(row)
+
+        return None
+
     def run(self, initial_state):
         '''The main optimization loop, using the rules defined in the Class'''
         current_state = initial_state
@@ -67,16 +93,30 @@ class BaseSimulatedAnnealing(ABC):
                 neighbour_cost = self.get_cost(neighbour_state)
             #here we have suitable parameters and cost
 
-            if random.random() < self.acceptance_probability(current_cost, neighbour_cost):
+            random_number = random.random()
+            test = self.acceptance_probability(current_cost, neighbour_cost)
+            
+            if random_number < test:
                 current_state = neighbour_state
                 current_cost = neighbour_cost
 
-                if current_cost < self.best_cost:
+                is_best = current_cost < self.best_cost
+                if self.track_states:
+                    self.states.append((self.temp, current_cost, test, random_number, True, is_best, current_state))
+
+                if is_best:
                     self.best_state = current_state
                     self.best_cost = current_cost
             
+            elif self.track_states:
+                self.states.append((self.temp, current_cost, test, random_number, False, current_cost == self.best_cost, current_state))
+
             self.update_temperature()
+        # end of optimization loop
         
+        if self.track_states:
+            self.write_csv()
+
         return self.best_state, self.best_cost
 
 class DirectSimulatedAnnealing(ABC):
@@ -163,7 +203,7 @@ class DirectSimulatedAnnealing(ABC):
         return self.configurations[-1][0] - self.configurations[0][0]
 
     def markov_length(self):
-        '''Gives the maximum Markov chain length dependant in the gap in configurations cost.'''
+        '''Gives the maximum Markov chain length dependent in the gap in configurations cost.'''
         return self.base_markov_length * (2 - np.exp(-self.cost_gap()))
 
     def best_cost(self):
@@ -185,7 +225,7 @@ class DirectSimulatedAnnealing(ABC):
         return None
 
     def run(self):
-        '''The main optimization loop, returns a tuple with best cost and best configuration.'''
+        '''Main optimization loop, returns a tuple with best configuration and best cost, respectively.'''
         if len(self.configurations) != self.num_configs:
             self.get_starting_configs()
 
@@ -244,4 +284,3 @@ if __name__ == '__main__':
     best_param, lowest_cost = solver.run(initial_guess)
 
     print(f'{best_param= :.4f},{lowest_cost= :.2e}')
-

@@ -58,10 +58,14 @@ def analyze_results(db_path="experiments.db", plot = False):
         print(f'Total runs: {n_runs}')
 
         if plot:
+            log_scale = False
             plt.figure(figsize=(10, 6))
             plt.plot(penalties, areas, marker='o', linestyle='-')
-            plt.xscale('log') # Logarithmic scale for penalty factor
-            plt.xlabel('Penalty Factor (log scale)')
+            if log_scale:
+                plt.xscale('log') # Logarithmic scale for penalty factor
+                plt.xlabel('Penalty Factor (log scale)')
+            else:
+                plt.xlabel('Penalty Factor')
             plt.ylabel('Area % Remaining')
             plt.title('Penalty Factor vs Area % Remaining')
             plt.grid(True, which="both", ls="-", alpha=0.5)

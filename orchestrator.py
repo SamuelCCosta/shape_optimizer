@@ -262,11 +262,16 @@ def run_experiments(worker_target, geometric_params, penalizations, kwargs_optim
 
     active_workers = []
 
-    for combo_bundle in combinations:
+    for n, combo_bundle in enumerate(combinations):
         if len(active_workers) >= max_processes:
             sentinels = [w.sentinel for w in active_workers]
             wait(sentinels)
             active_workers = [w for w in active_workers if w.is_alive()]
+
+        track_file_name = combo_bundle['kwargs_optimization'].get('track_file_name')
+        if track_file_name is not None and not isinstance(track_file_name, str):
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            combo_bundle['kwargs_optimization']['track_file_name'] = f'track_csv/{table_name}_{n}_{timestamp}.csv'
 
         w = spawn_ctx.Process(target=worker_target, 
                               args=(queue, scales, combo_bundle['geometric_params'], 
@@ -284,7 +289,7 @@ def run_experiments(worker_target, geometric_params, penalizations, kwargs_optim
 
 if __name__ == '__main__':
     geometric_params = {
-        "geometric_config": {'x_max': [1.0, 2.0], 'y_max': [1.0, 2.0], 'MW_x': 0.3, 'ME_x': 0.7},
+        "geometric_config": {'x_max': 1.0, 'y_max': 1.0, 'MW_x': 0.3, 'ME_x': 0.7},
         "h": 0.02,
         "heat_sources": 10.0,
         "base_temp": 0.0,
@@ -292,13 +297,14 @@ if __name__ == '__main__':
     }
     
     penalizations ={
-        'linear' : 256.0
+        'linear' : 128.0
     }
 
     kwargs_SA = {
-        'initial_temp' : 100,
-        'min_temp' : 0.01,
-        'cooling_rate' : 0.99
+        'initial_temp' : 10,
+        'min_temp' : 0.1,
+        'cooling_rate' : 0.95,
+        'track_file_name' : 'test.csv'
     }
     
     kwargs_DSA = {
@@ -311,10 +317,10 @@ if __name__ == '__main__':
 
     #set up optimizations
     #initial_params = [0.5, 0.5, 25.0, 0, 25.0]
-    initial_params = []
+    initial_params = [] #random
     scales = [0.1, 0.1, 5.0, 10.0, 5.0]
 
-    run_experiments(optimization_worker_SA, geometric_params, penalizations, kwargs_SA, scales, extra_worker_args=(initial_params,), db_path = 'test.db', table_name='results', max_processes=10)
+    run_experiments(optimization_worker_SA, geometric_params, penalizations, kwargs_SA, scales, extra_worker_args=(initial_params,), db_path = 'test.db', table_name='verbosity_test', max_processes=10)
     
 
     '''

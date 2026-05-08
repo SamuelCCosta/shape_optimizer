@@ -77,10 +77,11 @@ def dist_func(t):
     return np.linalg.norm(pt1 - pt2)
 
 starting_point = starting_parameters(c1, M1, c2, M2)
-
+print(f'{starting_point=}')
 
 res = minimize(dist_func, x0=starting_point) 
 t1_spec, t2_spec = res.x
+print(f'{t1_spec=}, {t2_spec=}')
 z_spec = res.fun
 
 # Plotting

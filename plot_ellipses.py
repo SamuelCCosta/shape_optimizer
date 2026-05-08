@@ -67,7 +67,7 @@ def plot_initial_and_best_params(initial_params, best_params, x_max, y_max):
 
 
 if __name__ == '__main__':
-    db_path = 'experiments.db'
+    db_path = 'test.db'
     table_name = 'results'
-    run_id = 17
+    run_id = 4
     plot_initial_and_best_params(*get_params_from_db(db_path, table_name, run_id))
