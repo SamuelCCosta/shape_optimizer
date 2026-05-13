@@ -43,7 +43,7 @@ def database_writer(queue: mp.Queue, column_names: dict, db_path="experiments.db
 
 def get_column_names_dict(geometric_params: dict, penalizations: dict, kwargs_optimization: dict, paramtype=list):
     '''Get a dict where column names map to their respective SQL type. Between optimization specific arguments and
-    geometric configuration, includes the columns 'runtime', 'best_param', 'best_cost', 'initial_params', 'scales'.
+    geometric configuration, includes the columns 'runtime', 'best_param', 'best_cost', 'initial_params'.
     '''
     # Sort which types are mapped to SQL types, default to 'TEXT'
     sql_type = {int: 'INTEGER', float: 'REAL'}
@@ -56,7 +56,7 @@ def get_column_names_dict(geometric_params: dict, penalizations: dict, kwargs_op
 
     param_SQL_type = get_sql_type(paramtype)
     middle = {'runtime': 'REAL', 'best_param': param_SQL_type, 'best_cost': 'REAL',
-              'initial_params': param_SQL_type, 'scales': param_SQL_type}
+              'initial_params': param_SQL_type}
 
     clean_penalizations = {k + '_penalization': 'REAL' for k, v in penalizations.items()}
 

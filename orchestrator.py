@@ -9,16 +9,22 @@ from pebble import concurrent
 import time
 import copy
 import itertools
+import os
 from db_utils import database_writer, get_column_names_dict, unfold_parameters
 
 
 class EllipseSA(BaseSimulatedAnnealing):
     '''Classical SA algorithm, needs an initial suitable configuration to progress with the optimization'''
-    def __init__(self, scales, geometric_params : dict, penalizations : dict, **kwargs):
+    def __init__(self, geometric_params : dict, penalizations : dict, **kwargs):
+        self.gen_seed = kwargs.pop('gen_seed', 0)
+        self.generation_attempts = 0 # Guarantee the seed works or gives a deterministic suitable seed
+
+        self.num_ellipses = geometric_params['num_ellipses']
+        perturbation = list(kwargs.pop('perturbation'))
+        self.perturbation = perturbation * self.num_ellipses
+        
         super().__init__(**kwargs)
         self.geometric_params = geometric_params
-        self.num_ellipses = geometric_params['num_ellipses']
-        self.scales = scales * self.num_ellipses
         self.initial_state = []
 
         #penalization related
@@ -45,18 +51,19 @@ class EllipseSA(BaseSimulatedAnnealing):
             return float('inf')
     
     def get_neighbour(self, state):
-        noise = [random.normalvariate(0.0, 1.0) * scale for scale in self.scales]
+        noise = [random.normalvariate(0.0, 1.0) * p for p in self.perturbation]
+        #noise = [random.uniform(-p, p) for p in self.perturbation] 
         return [s + n for s, n in zip(state, noise)]
     
-    def raw_generation_function(self):
+    def raw_generation_function(self, seed=0):
         '''Generates a random valid configuration, evaluates it, and returns cost & state.'''
         sqs = SquareSolver(**self.sqs_params)
         ellipses = EllipseBundle(**self.ellipse_bundle_params)
         
-        ellipses.generate_random()
+        ellipses.generate_random(seed=seed)
         
         if len(ellipses.bundle) < self.num_ellipses:
-            return float('inf'), None
+            return None, float('inf')
             
         state = []
         for e in ellipses.bundle:
@@ -65,16 +72,18 @@ class EllipseSA(BaseSimulatedAnnealing):
         try:
             area_percent = (self.full_area - ellipses.area()) / self.full_area
             cost = sqs.solve(ellipses) + self.linear_penalization * area_percent #OBJECTIVE FUNCTION
-            return cost, state
+            return state, cost
         except Exception:
-            return float('inf'), None
+            return None, float('inf')
     
     def get_initial_state(self):
         while self.initial_state == []:
             try:
+                current_seed = self.gen_seed + self.generation_attempts if self.gen_seed != 0 else 0
+                self.generation_attempts += 1
                 with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
-                    future = pool.schedule(self.raw_generation_function, timeout=2.0)
-                    cost, state = future.result() # type: ignore
+                    future = pool.schedule(self.raw_generation_function, args=[current_seed], timeout=2.0)
+                    state, cost = future.result() # type: ignore
                     if cost != float('inf'):
                         self.initial_state = state
             except Exception:
@@ -83,11 +92,14 @@ class EllipseSA(BaseSimulatedAnnealing):
 
 class EllipseDSA(DirectSimulatedAnnealing):
     '''Direct SA algorithm'''
-    def __init__(self, scales, geometric_params : dict, penalizations : dict, **kwargs):
+    def __init__(self, geometric_params : dict, penalizations : dict, **kwargs):
+        self.gen_seed = kwargs.pop('gen_seed', 0)
+        self.generation_attempts = 0
         super().__init__(**kwargs)
         self.geometric_params = geometric_params
         self.num_ellipses = geometric_params['num_ellipses']
-        self.scales = scales * self.num_ellipses
+        self.perturbation = self.perturbation * self.num_ellipses
+        self.min_perturbation = self.min_perturbation * self.num_ellipses
 
         #penalization related
         self.full_area = geometric_params['geometric_config']['x_max'] * geometric_params['geometric_config']['y_max']
@@ -113,18 +125,18 @@ class EllipseDSA(DirectSimulatedAnnealing):
             return float('inf')
     
     def get_neighbour(self, state):
-        noise = [random.normalvariate(0.0, 1.0) * scale for scale in self.scales]
+        noise = [random.normalvariate(0.0, 1.0) * scale for scale in self.perturbation]
         return [s + n for s, n in zip(state, noise)]
     
-    def raw_generation_function(self):
+    def raw_generation_function(self, seed=0):
         '''Generates a random valid configuration, evaluates it, and returns cost & state.'''
         sqs = SquareSolver(**self.sqs_params)
         ellipses = EllipseBundle(**self.ellipse_bundle_params)
         
-        ellipses.generate_random()
+        ellipses.generate_random(seed=seed)
         
         if len(ellipses.bundle) < self.num_ellipses:
-            return float('inf'), None
+            return None, float('inf')
             
         state = []
         for e in ellipses.bundle:
@@ -133,33 +145,35 @@ class EllipseDSA(DirectSimulatedAnnealing):
         try:
             area_percent = (self.full_area - ellipses.area()) / self.full_area
             cost = sqs.solve(ellipses) + self.linear_penalization * area_percent #OBJECTIVE FUNCTION
-            return cost, state
+            return state, cost
         except Exception:
-            return float('inf'), None
+            return None, float('inf')
 
     def get_starting_configs(self):
-        self.configurations = []
+        self.initial_configs = []
         print(f"Generating {self.num_configs} starting configurations...")
-        while len(self.configurations) < self.num_configs:
+        while len(self.initial_configs) < self.num_configs:
             try:
+                current_seed = self.gen_seed + self.generation_attempts if self.gen_seed != 0 else 0
+                self.generation_attempts += 1
                 with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
-                    future = pool.schedule(self.raw_generation_function, timeout=2.0)
-                    cost, state = future.result() # type: ignore
+                    future = pool.schedule(self.raw_generation_function, args=[current_seed], timeout=2.0)
+                    state, cost = future.result() # type: ignore
                     if cost != float('inf') and state is not None:
-                        self.configurations.append((cost, state))
+                        self.initial_configs.append((state, cost))
             except Exception:
                 pass # Ignore timeouts and crashes, try again
-        self.configurations.sort()
+        self.initial_configs.sort(key=lambda x: x[1])
 
     def test_generation(self):
         self.get_starting_configs()
-        print(len(self.configurations), self.configurations)
+        print(len(self.initial_configs), self.initial_configs)
 
 
-def optimization_worker_SA(queue : mp.Queue, scales : list, geometric_params : dict, 
-                        penalizations : dict, initial_params : list, kwargs_SA : dict):
+def optimization_worker_SA(queue : mp.Queue, geometric_params : dict, 
+                        penalizations : dict, kwargs_SA : dict, initial_params : list = []):
     '''Defines the routine of an optimization worker'''
-    solver = EllipseSA(scales, geometric_params, penalizations, **kwargs_SA)
+    solver = EllipseSA(geometric_params, penalizations, **kwargs_SA)
     
     if initial_params == []:
         solver.get_initial_state()
@@ -177,7 +191,7 @@ def optimization_worker_SA(queue : mp.Queue, scales : list, geometric_params : d
     run_parameters['best_param'] = best_param
     run_parameters['best_cost'] = best_cost
     run_parameters['initial_params'] = actual_initial_params
-    run_parameters['scales'] = scales
+    # run_parameters already has 'perturbation' from kwargs_SA
 
     for pen_type in penalizations:
         run_parameters[pen_type + '_penalization'] = penalizations[pen_type]
@@ -188,12 +202,12 @@ def optimization_worker_SA(queue : mp.Queue, scales : list, geometric_params : d
 
     queue.put(run_parameters)
 
-def optimization_worker_DSA(queue : mp.Queue, scales : list, geometric_params : dict, 
+def optimization_worker_DSA(queue : mp.Queue, geometric_params : dict, 
                         penalizations : dict, kwargs_DSA : dict):
     '''Defines the routine of a DSA optimization worker'''
-    solver = EllipseDSA(scales, geometric_params, penalizations, **kwargs_DSA)
+    solver = EllipseDSA(geometric_params, penalizations, **kwargs_DSA)
     start_time = time.time()
-    best_cost, best_param = solver.run() # DSA returns (cost, state)
+    best_param, best_cost = solver.run() # DSA returns (state, cost)
     runtime = time.time() - start_time
 
     # Get all the values into the SQL queue
@@ -201,8 +215,7 @@ def optimization_worker_DSA(queue : mp.Queue, scales : list, geometric_params : 
     run_parameters['runtime'] = runtime
     run_parameters['best_param'] = best_param
     run_parameters['best_cost'] = best_cost
-    run_parameters['initial_params'] = [state for cost, state in solver.configurations]
-    run_parameters['scales'] = scales
+    run_parameters['initial_params'] = solver.initial_configs #store all initializers
 
     for pen_type in penalizations:
         run_parameters[pen_type + '_penalization'] = penalizations[pen_type]
@@ -213,7 +226,8 @@ def optimization_worker_DSA(queue : mp.Queue, scales : list, geometric_params : 
 
     queue.put(run_parameters)
 
-def run_experiments(worker_target, geometric_params, penalizations, kwargs_optimization, scales, extra_worker_args=(), db_path='experiments.db', table_name='results', max_processes=10):
+def run_experiments(worker_target, geometric_params, penalizations, kwargs_optimization, extra_worker_args=(),
+                    db_path='experiments.db', table_name='results', max_processes=10):
     config_bundle = {
         'geometric_params': geometric_params,
         'penalizations': penalizations,
@@ -262,7 +276,10 @@ def run_experiments(worker_target, geometric_params, penalizations, kwargs_optim
 
     active_workers = []
 
-    for n, combo_bundle in enumerate(combinations):
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    db_name = os.path.splitext(os.path.basename(db_path))[0]
+
+    for n, combo_bundle in enumerate(combinations, start=1):
         if len(active_workers) >= max_processes:
             sentinels = [w.sentinel for w in active_workers]
             wait(sentinels)
@@ -270,12 +287,13 @@ def run_experiments(worker_target, geometric_params, penalizations, kwargs_optim
 
         track_file_name = combo_bundle['kwargs_optimization'].get('track_file_name')
         if track_file_name is not None and not isinstance(track_file_name, str):
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            combo_bundle['kwargs_optimization']['track_file_name'] = f'track_csv/{table_name}_{n}_{timestamp}.csv'
+            csv_dir = f'track_csv/{db_name}/{table_name}/{timestamp}'
+            os.makedirs(csv_dir, exist_ok=True)
+            combo_bundle['kwargs_optimization']['track_file_name'] = f'{csv_dir}/{n}.csv'
 
         w = spawn_ctx.Process(target=worker_target, 
-                              args=(queue, scales, combo_bundle['geometric_params'], 
-                              combo_bundle['penalizations'], *extra_worker_args, combo_bundle['kwargs_optimization']))
+                              args=(queue, combo_bundle['geometric_params'], 
+                              combo_bundle['penalizations'], combo_bundle['kwargs_optimization'], *extra_worker_args))
         w.start()
         active_workers.append(w)
     
@@ -289,38 +307,50 @@ def run_experiments(worker_target, geometric_params, penalizations, kwargs_optim
 
 if __name__ == '__main__':
     geometric_params = {
-        "geometric_config": {'x_max': 1.0, 'y_max': 1.0, 'MW_x': 0.3, 'ME_x': 0.7},
-        "h": 0.02,
-        "heat_sources": 10.0,
-        "base_temp": 0.0,
-        "num_ellipses": 2
+        "geometric_config" : {'x_max': 1.0, 'y_max': 1.0, 'MW_x': 0.3, 'ME_x': 0.7},
+        "h" : 0.02,
+        "heat_sources" : 10.0,
+        "base_temp" : 0.0,
+        "num_ellipses" : 2
     }
     
     penalizations ={
-        'linear' : 128.0
+        'linear' : 16.0
     }
 
     kwargs_SA = {
-        'initial_temp' : 10,
-        'min_temp' : 0.1,
-        'cooling_rate' : 0.95,
-        'track_file_name' : 'test.csv'
+        'initial_temp' : [1000] * 10,
+        'min_temp' : 0.0001,
+        'cooling_rate' : 0.995,
+        'track_file_name' : True,
+        'gen_seed' : 0, # 0 = no seed 
+        'perturbation' : (0.08, 0.08, 4.0, 8.0, 4.0) # SA perturbation
+    }
+
+    kwargs_DSA = {
+        'initial_temp' : 100.0, 'min_temp' : 0.01,
+        'cooling_rate_max' : 0.99, 'cooling_rate_min' : 0.95,
+        'base_markov_length' : 25, 'num_configs' : 50,
+        'initial_perturbation' : (0.08, 0.08, 4.0, 8.0, 4.0), 'min_perturbation' : (0.01, 0.01, 0.5, 1.0, 0.5),
+        'perturbation_update': 0.99,
+        'min_cost_gap' : 0.01, 'track_file_name' : None,
+        'gen_seed' : 0 # 0 = no seed
     }
     
-    kwargs_DSA = {
-        'initial_temp' : 1000.0, 'min_temp' : 0.0001,
-        'cooling_rate_max' : 0.999, 'cooling_rate_min' : 0.99,
-        'base_markov_length' : 50, 'num_configs' : 10,
-        'initial_perturbation' : 0.05, 'min_perturbation' : 0.01, 
-        'min_cost_gap' : 0.0001
-    }
+    optimization_type = 'SA'
+    max_processes = 10
+    database_name = 'experiments.db'
+    table_name = 'x1y1n2lambda16_SA'
+    n_runs = 0 # NOT IMPLEMENTED YET
 
-    #set up optimizations
-    #initial_params = [0.5, 0.5, 25.0, 0, 25.0]
-    initial_params = [] #random
-    scales = [0.1, 0.1, 5.0, 10.0, 5.0]
-
-    run_experiments(optimization_worker_SA, geometric_params, penalizations, kwargs_SA, scales, extra_worker_args=(initial_params,), db_path = 'test.db', table_name='verbosity_test', max_processes=10)
+    if optimization_type == 'SA':
+        run_experiments(optimization_worker_SA, geometric_params, penalizations, kwargs_SA, extra_worker_args=(),
+                    db_path = database_name, table_name = table_name, max_processes = max_processes)
+    elif optimization_type == 'DSA':
+        run_experiments(optimization_worker_DSA, geometric_params, penalizations, kwargs_DSA, extra_worker_args=(),
+                    db_path = database_name, table_name = table_name, max_processes = max_processes)
+    else:
+        raise ValueError("Invalid optimization type")
     
 
     '''

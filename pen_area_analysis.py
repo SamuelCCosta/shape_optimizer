@@ -4,14 +4,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse as MplEllipse
 
-def analyze_results(db_path="experiments.db", plot = False):
+def analyze_results(db_path="experiments.db", table_name="results", plot = False):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     try:
         # Select relevant columns from the results table
-        cursor.execute("SELECT run_id, best_param, best_cost, linear_penalization, x_max, y_max, best_param, initial_params FROM results ORDER BY linear_penalization ASC")
+        cursor.execute(f"SELECT run_id, best_param, best_cost, linear_penalization, x_max, y_max, best_param, initial_params FROM {table_name} ORDER BY linear_penalization ASC")
         rows = cursor.fetchall()
 
 
@@ -27,8 +27,8 @@ def analyze_results(db_path="experiments.db", plot = False):
                 continue
 
             #variable filtering rule
-            if row['x_max'] != 3.0 or row['linear_penalization'] not in [0.0]+[float(2**i) for i in range(13)]:
-                continue
+            #if row['x_max'] != 3.0 or row['linear_penalization'] not in [0.0]+[float(2**i) for i in range(13)]:
+            #    continue
             n_runs += 1
             run_id = row['run_id']
             total_cost = row['best_cost']
@@ -78,13 +78,13 @@ def analyze_results(db_path="experiments.db", plot = False):
         conn.close()
 
 
-def plot_domains(db_path="experiments.db"):
+def plot_domains(db_path="experiments.db", table_name = "results"):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     try:
-        cursor.execute("SELECT run_id, best_param, x_max, y_max, linear_penalization FROM results ORDER BY linear_penalization ASC")
+        cursor.execute(f"SELECT run_id, best_param, x_max, y_max, linear_penalization FROM {table_name} ORDER BY linear_penalization ASC")
         rows = cursor.fetchall()
 
         fig, axes = plt.subplots(4, 4, figsize=(10, 10))
@@ -156,5 +156,5 @@ def plot_domains(db_path="experiments.db"):
 
 
 if __name__ == '__main__':
-    analyze_results(plot=True)
+    analyze_results(db_path="experiments.db", table_name="x1y1n2lambda16_SA", plot=False)
     #plot_domains()

@@ -6,13 +6,14 @@ from pebble import ProcessPool
 from typing import Any
 import csv
 import json
+import copy
 
 spawn_ctx = mp.get_context('spawn') #fork context (default on linux) can lead to some issues
 
 class BaseSimulatedAnnealing(ABC):
     '''Regular Simulated Annealing algorithm, with geometric temperature reduction'''
 
-    def __init__(self, initial_temp = 1000.0, min_temp = 0.001, cooling_rate = 0.95, track_file_name : str | None = None):
+    def __init__(self, initial_temp = 1000.0, min_temp = 0.001, cooling_rate = 0.95, track_file_name = None):
         self.initial_temp = initial_temp
         self.temp = initial_temp
         self.min_temp = min_temp
@@ -60,7 +61,7 @@ class BaseSimulatedAnnealing(ABC):
     def write_csv(self):
         '''Writes the CSV with all informations related to the run, if track_file_name is defined'''
         if self.track_states:
-            with open(self.track_file_name, 'w', newline='') as f:
+            with open(self.track_file_name, 'w', newline='') as f: # type: ignore
                 writer = csv.writer(f)
                 # Header based on the tuple structure in run()
                 writer.writerow(['temp', 'cost', 'accept_prob', 'random_number', 'accepted', 'is_best', 'param'])
@@ -84,6 +85,8 @@ class BaseSimulatedAnnealing(ABC):
 
         self.best_state = current_state
         self.best_cost = current_cost
+        if self.track_states:
+            self.states.append((self.temp, current_cost, 1.0, 0.0, True, True, current_state))
 
         while self.temp > self.min_temp:
             neighbour_cost = float('inf')
@@ -91,7 +94,7 @@ class BaseSimulatedAnnealing(ABC):
             while neighbour_cost == float('inf'):
                 neighbour_state = self.get_neighbour(current_state)
                 neighbour_cost = self.get_cost(neighbour_state)
-            #here we have suitable parameters and cost
+            # here we have suitable parameters and cost
 
             random_number = random.random()
             test = self.acceptance_probability(current_cost, neighbour_cost)
@@ -102,14 +105,14 @@ class BaseSimulatedAnnealing(ABC):
 
                 is_best = current_cost < self.best_cost
                 if self.track_states:
-                    self.states.append((self.temp, current_cost, test, random_number, True, is_best, current_state))
+                    self.states.append((self.temp, neighbour_cost, test, random_number, True, is_best, neighbour_state))
 
                 if is_best:
                     self.best_state = current_state
                     self.best_cost = current_cost
             
             elif self.track_states:
-                self.states.append((self.temp, current_cost, test, random_number, False, current_cost == self.best_cost, current_state))
+                self.states.append((self.temp, neighbour_cost, test, random_number, False, False, neighbour_state))
 
             self.update_temperature()
         # end of optimization loop
@@ -122,30 +125,40 @@ class BaseSimulatedAnnealing(ABC):
 class DirectSimulatedAnnealing(ABC):
     def __init__(self, initial_temp = 1000.0, min_temp = 0.0001, cooling_rate_max = 0.999,
                  cooling_rate_min = 0.99, base_markov_length = 50, num_configs = 100,
-                 initial_perturbation = 0.05, min_perturbation = 0.01, min_cost_gap = 0.0001):
+                 initial_perturbation = [0.05], min_perturbation = [0.01], perturbation_update = 0.995,
+                 min_cost_gap = 0.0001, track_file_name = None):
         self.initial_temp = initial_temp
         self.temp = initial_temp
         self.min_temp = min_temp
         self.min_cost_gap = min_cost_gap
 
-        #cooling
+        # cooling
         self.max_cooling_rate = cooling_rate_max
         self.min_cooling_rate = cooling_rate_min
         self.effective_cooling = 1.0
 
-        #markov lengths
+        # markov lengths
         self.base_markov_length = base_markov_length
         self.current_markov_length = 0
         self.effective_past_markov_length = 0
 
         self.num_configs = num_configs
 
-        #perturbation values
-        self.perturbation = initial_perturbation
-        self.min_perturbation = min_perturbation
+        # perturbation values
+        self.perturbation : list[float] = list(initial_perturbation) if isinstance(initial_perturbation, tuple) else initial_perturbation
+        self.min_perturbation : list[float] = list(min_perturbation) if isinstance(min_perturbation, tuple) else min_perturbation
+        self.perturbation_update = perturbation_update
         
-        #track best state and energy
-        self.configurations = [] #sorted by cost
+        # track best state and cost (state, costs)
+        self.initial_configs = [] # (state,cost) sorted by cost
+        self.configurations = [] # sorted by cost
+
+        #tracking
+        self.track_states = track_file_name is not None
+        if self.track_states:
+            # tuples of type (temp, effective_cooling, markov_length, current_perturbation, is_best, configurations)
+            self.states = []
+            self.track_file_name = track_file_name
 
     @abstractmethod
     def get_neighbour(self, state) -> Any:
@@ -188,19 +201,22 @@ class DirectSimulatedAnnealing(ABC):
             cooling_rate = self.effective_cooling - (self.effective_cooling - self.min_cooling_rate) * (1 - self.effective_past_markov_length/self.current_markov_length)
         else:
             cooling_rate = self.max_cooling_rate - (self.max_cooling_rate - self.effective_cooling) * (self.current_markov_length/self.effective_past_markov_length)
-        #update temperature
+        # update temperature
         self.effective_cooling = cooling_rate
         self.temp *= self.effective_cooling
         return None
     
     def update_perturbation(self):
         '''Updates how much perturbation is allowed. Default: geometric reduction.'''
-        self.perturbation *= 0.995
+        if isinstance(self.perturbation, list):
+            self.perturbation = [p * self.perturbation_update for p in self.perturbation]
+        elif isinstance(self.perturbation, (int, float)):
+            self.perturbation *= self.perturbation_update
         return None
 
     def cost_gap(self):
         '''Returns the difference between highest and lowest cost'''
-        return self.configurations[-1][0] - self.configurations[0][0]
+        return self.configurations[-1][1] - self.configurations[0][1]
 
     def markov_length(self):
         '''Gives the maximum Markov chain length dependent in the gap in configurations cost.'''
@@ -208,28 +224,30 @@ class DirectSimulatedAnnealing(ABC):
 
     def best_cost(self):
         '''Returns lowest cost'''
-        return self.configurations[0][0]
+        return self.configurations[0][1]
     
     def worst_cost(self):
-        return self.configurations[-1][0]
+        return self.configurations[-1][1]
     
     def second_worst_cost(self):
         '''AKA worse cost'''
-        return self.configurations[-2][0]
+        return self.configurations[-2][1]
     
     def update_configuration(self, new_cost, new_state):
         '''Removes the worst configuration and adds the new_state, and then orders the list again.'''
         self.configurations.pop() #remove worst
-        self.configurations.append((new_cost, new_state))
-        self.configurations.sort() #could just insert in the right place
+        self.configurations.append((new_state, new_cost))
+        self.configurations.sort(key=lambda x: x[1]) #could just insert in the right place
         return None
 
     def run(self):
         '''Main optimization loop, returns a tuple with best configuration and best cost, respectively.'''
-        if len(self.configurations) != self.num_configs:
+        if len(self.initial_configs) == 0:
             self.get_starting_configs()
+        
+        self.configurations = copy.deepcopy(self.initial_configs)
 
-        while (self.perturbation > self.min_perturbation) or (self.temp > self.min_temp) or (self.cost_gap() >  self.min_cost_gap):
+        while (self.perturbation > self.min_perturbation) or (self.temp > self.min_temp) or (self.cost_gap() >  self.min_cost_gap): #type:ignore
             self.current_markov_length = self.markov_length()
             previous_second_worst_cost = self.second_worst_cost()
             length = 0
@@ -240,7 +258,7 @@ class DirectSimulatedAnnealing(ABC):
                 
                 #get suitable configuration
                 while neighbour_cost == float('inf'):
-                    chosen_cost, chosen_state = random.choice(self.configurations)
+                    chosen_state, chosen_cost = random.choice(self.configurations)
                     neighbour_state = self.get_neighbour(chosen_state)
                     neighbour_cost = self.get_cost(neighbour_state)
                 
@@ -256,8 +274,7 @@ class DirectSimulatedAnnealing(ABC):
                 self.update_perturbation()
             self.effective_past_markov_length = length
         
-        return (self.configurations[0][1], self.configurations[0][0])
-
+        return self.configurations[0]
 
 
 if __name__ == '__main__':

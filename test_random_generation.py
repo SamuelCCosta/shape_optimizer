@@ -7,7 +7,7 @@ import multiprocessing as mp
 from pebble import ProcessPool, ProcessExpired
 from concurrent.futures import TimeoutError
 
-def raw_solve_worker(geometric_info, h, heat_source, base_temp, num_ellipses, seed):
+def raw_solve_worker(geometric_info, h, heat_source, base_temp, num_ellipses, seed, penalization):
     start_time = time.perf_counter()
     bundle = EllipseBundle(geometric_info, h, num_ellipses)
     bundle.generate_random(seed=seed)
@@ -16,10 +16,13 @@ def raw_solve_worker(geometric_info, h, heat_source, base_temp, num_ellipses, se
     
     sqs = SquareSolver(geometric_info, h, heat_source, base_temp)
     try:
-        sqs.solve(bundle)
-        return elapsed_time, area, False
+        raw_cost = sqs.solve(bundle)
+        full_area = geometric_info['x_max'] * geometric_info['y_max']
+        area_percent = (full_area - area) / full_area
+        penalized_cost = raw_cost + penalization * area_percent
+        return elapsed_time, area, False, penalized_cost
     except Exception:
-        return elapsed_time, area, True
+        return elapsed_time, area, True, float('inf')
 
 def test_random_generation(geometric_info, h, num_ellipses, seed):
     # 1. Create the bundle
@@ -69,13 +72,14 @@ def test_random_generation(geometric_info, h, num_ellipses, seed):
     plt.title('Randomly Generated Ellipses via C++')
     plt.show()
 
-def test_average_runtime(geometric_info, h, num_ellipses, seed, iteration_count):
+def test_average_runtime(geometric_info, h, num_ellipses, seed, iteration_count, penalization):
     print(f"Testing average runtime with {num_ellipses} ellipses over {iteration_count} iterations...")
     total_time = 0.0
     bundle_area = 0.0
     error_count = 0
     timeout_count = 0
     crash_count = 0
+    finite_costs = []
     
     spawn_ctx = mp.get_context('spawn')
     heat_source = 10.0
@@ -87,13 +91,15 @@ def test_average_runtime(geometric_info, h, num_ellipses, seed, iteration_count)
         try:
             with ProcessPool(max_workers=1, context=spawn_ctx, max_tasks=1) as pool:
                 # 5.0 second timeout, adjust if some valid meshes naturally take longer
-                future = pool.schedule(raw_solve_worker, args=[geometric_info, h, heat_source, base_temp, num_ellipses, current_seed], timeout=5.0)
-                elapsed_time, area, solver_error = future.result()
+                future = pool.schedule(raw_solve_worker, args=[geometric_info, h, heat_source, base_temp, num_ellipses, current_seed, penalization], timeout=5.0)
+                elapsed_time, area, solver_error, cost = future.result()
                 
                 total_time += elapsed_time
                 bundle_area += area
                 if solver_error:
                     error_count += 1
+                elif cost != float('inf'):
+                    finite_costs.append(cost)
         except TimeoutError:
             timeout_count += 1
         except ProcessExpired:
@@ -108,17 +114,33 @@ def test_average_runtime(geometric_info, h, num_ellipses, seed, iteration_count)
     print(f"Average area: {avg_area:.6f}")
     print(f"Solver Errors: {error_count} | Crashes: {crash_count} | Timeouts: {timeout_count} (out of {iteration_count})")
     print()
+    return finite_costs
 
 if __name__ == '__main__':
     geometric_info = {'x_max': 1.0, 'y_max': 1.0, 'MW_x': 0.3, 'ME_x': 0.7}
     h = 0.02
-    num_ellipses = 4
+    num_ellipses = 2
     seed = 0 # 0 = NO SEED
-    iteration_count = 100
-    '''nums_ellipses = [4,8,12]
-    for n_ellipses in nums_ellipses:
-        test_average_runtime(geometric_info, h, n_ellipses, seed, iteration_count)'''
+    linear_pen = 128.0
+    iteration_count = 500
     #test_random_generation(geometric_info, h, num_ellipses, seed)
-    
 
-    test_average_runtime(geometric_info, h, num_ellipses, seed, iteration_count)
+    finite_costs = test_average_runtime(geometric_info, h, num_ellipses, seed, iteration_count, linear_pen)
+
+    finite_costs_avg = sum(finite_costs) / len(finite_costs)
+    finite_costs_var = sum((x - finite_costs_avg) ** 2 for x in finite_costs) / (len(finite_costs))
+    finite_costs_std = finite_costs_var ** 0.5
+    finite_costs_min = min(finite_costs)
+    finite_costs_max = max(finite_costs)
+
+    print(f'Avg cost: {finite_costs_avg}, std: {finite_costs_std}, min: {finite_costs_min}, max: {finite_costs_max}')
+
+    if finite_costs:
+        plt.figure(figsize=(8, 6))
+        plt.hist(finite_costs, bins=30, color='skyblue', edgecolor='black', alpha=0.7)
+        plt.title(f'Distribution of Randomly Generated Costs (n={len(finite_costs)})')
+        plt.xlabel('Penalized Cost')
+        plt.ylabel('Frequency')
+        plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        plt.show()
