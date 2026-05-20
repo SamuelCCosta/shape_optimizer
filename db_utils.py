@@ -69,7 +69,8 @@ def get_column_names_dict(geometric_params: dict, penalizations: dict, kwargs_op
     
     clean_geometric_params = {k: get_sql_type(v) for k, v in flat_geo.items()}
     
-    return clean_kwargs_optimization | middle | clean_penalizations | clean_geometric_params
+    return (clean_kwargs_optimization | middle | clean_penalizations | 
+            clean_geometric_params | {'cpu_model': 'TEXT'})
 
 def unfold_parameters(parameters: dict):
     '''From a dictionary, unfolds dictionary values, if the value is a list or tuple outputs a JSON string.'''
@@ -85,3 +86,14 @@ def unfold_parameters(parameters: dict):
             output[key] = json.dumps(val)
     
     return output
+
+def get_cpu_model():
+    '''Returns the CPU model name on Linux systems.'''
+    try:
+        with open("/proc/cpuinfo", "r") as f:
+            for line in f:
+                if "model name" in line:
+                    return line.split(":")[1].strip()
+    except Exception:
+        pass
+    return "Unknown"

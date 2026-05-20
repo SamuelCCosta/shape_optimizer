@@ -1,9 +1,10 @@
 # Shape Optimizer Configuration
-optimization_type: SA
-max_processes: 10
-database_name: experiments.db
-table_name: x1y1n4lambda5_SA
-n_runs: 0 # not yet implemented
+optimization_type: DSA # can be SA, DSA
+combination_type: zip # can be grid (cartesian product), zip
+max_processes: 5
+database_name: test.db
+table_name: DSA_verbosity_test_v2
+n_runs: 3 # number of trials per configuration
 
 geometric_params:
   geometric_config:
@@ -17,26 +18,26 @@ geometric_params:
   num_ellipses: 4
 
 penalizations:
-  linear: 5.0
+  linear: 4.0
 
-kwargs_SA:
+kwargs_optimization_: #SA
   initial_temp: 1000
   min_temp: 0.0001
   cooling_rate: 0.995
   track_file_name: true
-  gen_seed: 0
-  perturbation: [0.08, 0.08, 4.0, 8.0, 4.0]
+  gen_seed: 0 # 0 = no seed
+  perturbation: [0.08, 0.08, 4.0, 6.0, 4.0]
 
-kwargs_DSA:
-  initial_temp: 100.0
+kwargs_optimization: #DSA
+  initial_temp: 1.0
   min_temp: 0.01
-  cooling_rate_max: 0.99
-  cooling_rate_min: 0.95
-  base_markov_length: 25
-  num_configs: 50
+  cooling_rate_max: 0.75
+  cooling_rate_min: 0.5
+  base_markov_length: 5 # 15 * n_ellipses
+  num_configs: 10 # 10 * (n_ellipses + 1)
   initial_perturbation: [0.08, 0.08, 4.0, 8.0, 4.0]
-  min_perturbation: [0.01, 0.01, 0.5, 1.0, 0.5]
-  perturbation_update: 0.99
+  min_perturbation: [0.04, 0.04, 1.0, 2.0, 1.0]
+  perturbation_update: 0.9
   min_cost_gap: 0.01
-  track_file_name: null
-  gen_seed: 0
+  track_file_name: true
+  gen_seed: 0 # 0 = no seed

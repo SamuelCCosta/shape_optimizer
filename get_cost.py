@@ -6,7 +6,7 @@ import time
 #h = 0.02
 heat_source = 10.0
 base_temp = 0.0
-num_ellipses = 2
+num_ellipses = 4
 geometric_info = {'x_max' : 1.0, 'y_max' : 1.0, 'MW_x' : 0.3, 'ME_x' : 0.7}
 big_area = geometric_info['x_max'] * geometric_info['y_max']
 
@@ -17,8 +17,30 @@ params = [0.5, 0.5, AC_param, 0.0, AC_param]
 print(f'{penalization=}')
 
 #h_values = [0.02, 0.018, 0.01, 0.0075, 0.005]
-h_values = [0.02, 0.01, 0.003]
-params = [0.17192565444874897, 0.2848518988652481, 147.39626194489895, 25.286903310697127, 166.98236756042007, 0.5857396208311669, 0.5182635065978133, 7.566452987234112, 2.3577718294147756, 5.814000668355892]
+h_values = [0.02]
+
+params = [
+  0.7140744550877801,
+  0.8084752847524989,
+  323.910908739876,
+  -64.06973330334914,
+  358.9984573566974,
+  0.8770311056021156,
+  0.20938680977638013,
+  297.5637774573435,
+  -22.75745330312562,
+  121.67303229256659,
+  0.8700388561011926,
+  0.6911367346200966,
+  515.9118472380815,
+  130.6976341989308,
+  325.5308045524322,
+  0.33735004032166704,
+  0.4867808895759328,
+  15.266611718741553,
+  4.793988330098576,
+  6.174042863735902
+]
 
 
 @concurrent.process(timeout = 30.0)
@@ -44,12 +66,12 @@ def cost(params, h):
         print(f'With params \n{params} \nError: {e}')
         return float('inf'), float('inf')
 
-def get_gradient(params, h, delta=1e-5):
+def get_gradient(params, h, delta=1e-6):
     """Computes the numerical gradient of the penalized cost using forward differences."""
     gradient = []
     
     try:
-        base_obj, base_area = cost(params, h).result()
+        base_obj, base_area = cost(params, h).result() #type: ignore
         base_cost = base_obj + (base_area * penalization)
     except Exception:
         return [float('nan')] * len(params)
@@ -59,12 +81,37 @@ def get_gradient(params, h, delta=1e-5):
         perturbed_params[i] += delta
         
         try:
-            pert_obj, pert_area = cost(perturbed_params, h).result()
+            pert_obj, pert_area = cost(perturbed_params, h).result() #type: ignore
             if pert_obj == float('inf'):
                 gradient.append(float('nan'))
             else:
                 pert_cost = pert_obj + (pert_area * penalization)
                 gradient.append((pert_cost - base_cost) / delta)
+        except Exception:
+            gradient.append(float('nan'))
+            
+    return gradient
+
+def get_gradient_central(params, h, delta=1e-6):
+    """Computes the numerical gradient of the penalized cost using central differences."""
+    gradient = []
+    
+    for i in range(len(params)):
+        params_plus = list(params)
+        params_minus = list(params)
+        params_plus[i] += delta
+        params_minus[i] -= delta
+        
+        try:
+            plus_obj, plus_area = cost(params_plus, h).result() #type: ignore
+            minus_obj, minus_area = cost(params_minus, h).result() #type: ignore
+            
+            if plus_obj == float('inf') or minus_obj == float('inf'):
+                gradient.append(float('nan'))
+            else:
+                plus_cost = plus_obj + (plus_area * penalization)
+                minus_cost = minus_obj + (minus_area * penalization)
+                gradient.append((plus_cost - minus_cost) / (2 * delta))
         except Exception:
             gradient.append(float('nan'))
             
@@ -87,7 +134,9 @@ if __name__ == '__main__':
             print(f"{h_test:8.3f} | {elapsed:10.4f} | {objective:12.4f} | {penalized_cost:12.4f}")
             
             grad = get_gradient(params, h_test)
-            print(f"         -> Gradient: {[round(g, 4) if not np.isnan(g) else 'NaN' for g in grad]}")
+            print(f"  -> Forward Gradient: {[round(g, 4) if not np.isnan(g) else 'NaN' for g in grad]}")
+            grad_central = get_gradient_central(params, h_test)
+            print(f"  -> Central Gradient: {[round(g, 4) if not np.isnan(g) else 'NaN' for g in grad_central]}")
         except Exception as e:
             elapsed = time.perf_counter() - start_time
             # Captura Crash de C++ (ProcessExpired, BrokenProcessPool, etc)

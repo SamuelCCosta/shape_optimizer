@@ -70,6 +70,8 @@ outputs = { self, nixpkgs }: {
                 pebble
                 numpy
                 scipy
+                pyyaml
+                types-pyyaml
             ]);
 
         in

@@ -5,6 +5,7 @@ import multiprocessing as mp
 from pebble import ProcessPool
 from typing import Any
 import csv
+import bisect
 import json
 import copy
 
@@ -24,8 +25,10 @@ class BaseSimulatedAnnealing(ABC):
         self.track_states = track_file_name is not None
         if self.track_states:
             #tuples of type (temp, cost, accept prob, random number, passed, is_best, param)
-            self.states = []
             self.track_file_name = track_file_name
+            with open(self.track_file_name, 'w', newline='') as f: #type:ignore
+                writer = csv.writer(f)
+                writer.writerow(['temp', 'cost', 'accept_prob', 'random_number', 'accepted', 'is_best', 'param'])
 
     @abstractmethod
     def get_neighbour(self, state) -> Any:
@@ -58,24 +61,15 @@ class BaseSimulatedAnnealing(ABC):
         self.temp *= self.cooling_rate
         return None
     
-    def write_csv(self):
-        '''Writes the CSV with all informations related to the run, if track_file_name is defined'''
+    def _log_state(self, temp, cost, accept_prob, random_number, accepted, is_best, param):
         if self.track_states:
-            with open(self.track_file_name, 'w', newline='') as f: # type: ignore
+            with open(self.track_file_name, 'a', newline='') as f: #type:ignore
                 writer = csv.writer(f)
-                # Header based on the tuple structure in run()
-                writer.writerow(['temp', 'cost', 'accept_prob', 'random_number', 'accepted', 'is_best', 'param'])
-                for state_row in self.states:
-                    # Convert any numpy types to standard python types for CSV/JSON compatibility
-                    row = []
-                    for item in state_row:
-                        if isinstance(item, (np.floating, np.integer)):
-                            item = item.item()
-                        row.append(item)
-                    row[-1] = json.dumps(row[-1])
-                    writer.writerow(row)
+                row = [temp, cost, accept_prob, random_number, accepted, is_best, param]
+                clean_row = [item.item() if isinstance(item, (np.floating, np.integer)) else item for item in row]
+                clean_row[-1] = json.dumps(clean_row[-1])
+                writer.writerow(clean_row)
 
-        return None
 
     def run(self, initial_state):
         '''The main optimization loop, using the rules defined in the Class'''
@@ -86,7 +80,7 @@ class BaseSimulatedAnnealing(ABC):
         self.best_state = current_state
         self.best_cost = current_cost
         if self.track_states:
-            self.states.append((self.temp, current_cost, 1.0, 0.0, True, True, current_state))
+            self._log_state(self.temp, current_cost, 1.0, 0.0, True, True, current_state)
 
         while self.temp > self.min_temp:
             neighbour_cost = float('inf')
@@ -105,20 +99,16 @@ class BaseSimulatedAnnealing(ABC):
 
                 is_best = current_cost < self.best_cost
                 if self.track_states:
-                    self.states.append((self.temp, neighbour_cost, test, random_number, True, is_best, neighbour_state))
+                    self._log_state(self.temp, neighbour_cost, test, random_number, True, is_best, neighbour_state)
 
                 if is_best:
                     self.best_state = current_state
                     self.best_cost = current_cost
             
             elif self.track_states:
-                self.states.append((self.temp, neighbour_cost, test, random_number, False, False, neighbour_state))
+                self._log_state(self.temp, neighbour_cost, test, random_number, False, False, neighbour_state)
 
             self.update_temperature()
-        # end of optimization loop
-        
-        if self.track_states:
-            self.write_csv()
 
         return self.best_state, self.best_cost
 
@@ -156,9 +146,10 @@ class DirectSimulatedAnnealing(ABC):
         #tracking
         self.track_states = track_file_name is not None
         if self.track_states:
-            # tuples of type (temp, effective_cooling, markov_length, current_perturbation, is_best, configurations)
-            self.states = []
             self.track_file_name = track_file_name
+            with open(self.track_file_name, 'w', newline='') as f: #type:ignore
+                writer = csv.writer(f)
+                writer.writerow(['temp', 'effective_cooling', 'current_markov_length', 'perturbation', 'best_cost', 'best_param', 'cost_gap'])
 
     @abstractmethod
     def get_neighbour(self, state) -> Any:
@@ -234,11 +225,23 @@ class DirectSimulatedAnnealing(ABC):
         return self.configurations[-2][1]
     
     def update_configuration(self, new_cost, new_state):
-        '''Removes the worst configuration and adds the new_state, and then orders the list again.'''
-        self.configurations.pop() #remove worst
-        self.configurations.append((new_state, new_cost))
-        self.configurations.sort(key=lambda x: x[1]) #could just insert in the right place
+        '''Removes the worst configuration and inserts the new_state in the correct sorted position.'''
+        self.configurations.pop() # remove worst
+        bisect.insort(self.configurations, (new_state, new_cost), key=lambda x: x[1])
         return None
+        
+    def _log_state(self, temp, effective_cooling, current_markov_length, perturbation, best_cost, best_param, cost_gap):
+        if self.track_states:
+            with open(self.track_file_name, 'a', newline='') as f: #type:ignore
+                writer = csv.writer(f)
+                
+                # Only log the first 5 elements of perturbation (yes, hardcoded)
+                log_perturbation = perturbation[:5] if isinstance(perturbation, list) else perturbation
+                row = [temp, effective_cooling, current_markov_length, log_perturbation, best_cost, best_param, cost_gap]
+                clean_row = [item.item() if isinstance(item, (np.floating, np.integer)) else item for item in row]
+                clean_row[3] = json.dumps(clean_row[3])
+                clean_row[5] = json.dumps(clean_row[5])
+                writer.writerow(clean_row)
 
     def run(self):
         '''Main optimization loop, returns a tuple with best configuration and best cost, respectively.'''
@@ -246,8 +249,15 @@ class DirectSimulatedAnnealing(ABC):
             self.get_starting_configs()
         
         self.configurations = copy.deepcopy(self.initial_configs)
+        
+        if self.track_states:
+            self._log_state(self.temp, self.effective_cooling, self.current_markov_length, 
+                            self.perturbation, self.best_cost(), self.configurations[0][0], self.cost_gap())
 
-        while (self.perturbation > self.min_perturbation) or (self.temp > self.min_temp) or (self.cost_gap() >  self.min_cost_gap): #type:ignore
+
+        while (any(p > m for p, m in zip(self.perturbation, self.min_perturbation))) or \
+              (self.temp > self.min_temp) or \
+              (self.cost_gap() >  self.min_cost_gap):
             self.current_markov_length = self.markov_length()
             previous_second_worst_cost = self.second_worst_cost()
             length = 0
@@ -273,6 +283,10 @@ class DirectSimulatedAnnealing(ABC):
             if self.second_worst_cost() >= previous_second_worst_cost: #worse configuration not improved
                 self.update_perturbation()
             self.effective_past_markov_length = length
+            
+            if self.track_states:
+                self._log_state(self.temp, self.effective_cooling, self.current_markov_length, 
+                                self.perturbation, self.best_cost(), self.configurations[0][0], self.cost_gap())
         
         return self.configurations[0]
 

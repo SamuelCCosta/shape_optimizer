@@ -10,7 +10,7 @@ import time
 import copy
 import itertools
 import os
-from db_utils import database_writer, get_column_names_dict, unfold_parameters
+from db_utils import database_writer, get_column_names_dict, unfold_parameters, get_cpu_model
 
 
 class EllipseSA(BaseSimulatedAnnealing):
@@ -197,6 +197,7 @@ def optimization_worker_SA(queue : mp.Queue, geometric_params : dict,
         run_parameters[pen_type + '_penalization'] = penalizations[pen_type]
     run_parameters |= geometric_params
 
+    run_parameters['cpu_model'] = get_cpu_model()
     #Convert all non-number values into JSON strings
     run_parameters = unfold_parameters(run_parameters)
 
@@ -221,19 +222,13 @@ def optimization_worker_DSA(queue : mp.Queue, geometric_params : dict,
         run_parameters[pen_type + '_penalization'] = penalizations[pen_type]
     run_parameters |= geometric_params
 
+    run_parameters['cpu_model'] = get_cpu_model()
     #Convert all non-number values into JSON strings
     run_parameters = unfold_parameters(run_parameters)
 
     queue.put(run_parameters)
 
-def run_experiments(worker_target, geometric_params, penalizations, kwargs_optimization, extra_worker_args=(),
-                    db_path='experiments.db', table_name='results', max_processes=10):
-    config_bundle = {
-        'geometric_params': geometric_params,
-        'penalizations': penalizations,
-        'kwargs_optimization': kwargs_optimization
-    }
-    
+def _traverse_and_find_lists(config_bundle):
     paths = []
     sweep_lists = []
     
@@ -246,7 +241,19 @@ def run_experiments(worker_target, geometric_params, penalizations, kwargs_optim
             sweep_lists.append(obj)
             
     traverse(config_bundle, [])
+    return paths, sweep_lists
+
+def build_grid_combinations(geometric_params, penalizations, kwargs_optimization):
+    config_bundle = {
+        'geometric_params': geometric_params,
+        'penalizations': penalizations,
+        'kwargs_optimization': kwargs_optimization
+    }
+    paths, sweep_lists = _traverse_and_find_lists(config_bundle)
     
+    if not sweep_lists:
+        return [config_bundle]
+        
     combinations = []
     for combo in itertools.product(*sweep_lists):
         new_bundle = copy.deepcopy(config_bundle)
@@ -256,6 +263,38 @@ def run_experiments(worker_target, geometric_params, penalizations, kwargs_optim
                 target = target[key]
             target[path[-1]] = val
         combinations.append(new_bundle)
+        
+    return combinations
+
+def build_zip_combinations(geometric_params, penalizations, kwargs_optimization):
+    config_bundle = {
+        'geometric_params': geometric_params,
+        'penalizations': penalizations,
+        'kwargs_optimization': kwargs_optimization
+    }
+    paths, sweep_lists = _traverse_and_find_lists(config_bundle)
+    
+    if not sweep_lists:
+        return [config_bundle]
+        
+    length = len(sweep_lists[0])
+    if not all(len(lst) == length for lst in sweep_lists):
+        raise ValueError("For zipped combinations, all parameter lists must have the same length.")
+        
+    combinations = []
+    for combo in zip(*sweep_lists):
+        new_bundle = copy.deepcopy(config_bundle)
+        for path, val in zip(paths, combo):
+            target = new_bundle
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = val
+        combinations.append(new_bundle)
+        
+    return combinations
+
+def run_experiments(worker_target, combinations, extra_worker_args=(),
+                    db_path='experiments.db', table_name='results', max_processes=10):
         
     if not combinations:
         print("No combinations to run.")
@@ -286,7 +325,7 @@ def run_experiments(worker_target, geometric_params, penalizations, kwargs_optim
             active_workers = [w for w in active_workers if w.is_alive()]
 
         track_file_name = combo_bundle['kwargs_optimization'].get('track_file_name')
-        if track_file_name is not None and not isinstance(track_file_name, str):
+        if track_file_name is not None and not isinstance(track_file_name, str): #active, not hardcoded
             csv_dir = f'track_csv/{db_name}/{table_name}/{timestamp}'
             os.makedirs(csv_dir, exist_ok=True)
             combo_bundle['kwargs_optimization']['track_file_name'] = f'{csv_dir}/{n}.csv'
@@ -344,10 +383,12 @@ if __name__ == '__main__':
     n_runs = 0 # NOT IMPLEMENTED YET
 
     if optimization_type == 'SA':
-        run_experiments(optimization_worker_SA, geometric_params, penalizations, kwargs_SA, extra_worker_args=(),
+        combinations = build_grid_combinations(geometric_params, penalizations, kwargs_SA)
+        run_experiments(optimization_worker_SA, combinations, extra_worker_args=(),
                     db_path = database_name, table_name = table_name, max_processes = max_processes)
     elif optimization_type == 'DSA':
-        run_experiments(optimization_worker_DSA, geometric_params, penalizations, kwargs_DSA, extra_worker_args=(),
+        combinations = build_grid_combinations(geometric_params, penalizations, kwargs_DSA)
+        run_experiments(optimization_worker_DSA, combinations, extra_worker_args=(),
                     db_path = database_name, table_name = table_name, max_processes = max_processes)
     else:
         raise ValueError("Invalid optimization type")
