@@ -11,6 +11,7 @@ def create_bundle():
         "annealing.py",
         "orchestrator.py",
         "db_utils.py",
+        "watch_optimization.py",
         "configuration.yaml",
         "requirements.txt",
         "setup_venv.sh"

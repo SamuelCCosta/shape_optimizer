@@ -17,20 +17,35 @@ def shape_optimizer(config_file : str):
                 if "perturbation" in opt_key and isinstance(opt_val, list):
                         config[key][opt_key] = tuple(opt_val)
     
+    # get appropriate kwargs for the optimization
+    match config['optimization_type']:
+        case 'SA':
+            kwargs_optimization = config['kwargs_SA']
+        case 'DSA':
+            kwargs_optimization = config['kwargs_DSA']
+        case _:
+            raise ValueError("Invalid optimization type")
+
     # Get combinations list
     n_runs = config['n_runs']
     match config['combination_type']:
         case 'grid':
-            combinations = build_grid_combinations(config['geometric_params'], config['penalizations'], config['kwargs_optimization'])
+            combinations = build_grid_combinations(config['geometric_params'], config['penalizations'], kwargs_optimization)
             combinations = [copy.deepcopy(c) for _ in range(n_runs) for c in combinations]
         case 'zip':
-            combinations = build_zip_combinations(config['geometric_params'], config['penalizations'], config['kwargs_optimization'])
+            combinations = build_zip_combinations(config['geometric_params'], config['penalizations'], kwargs_optimization)
             combinations = [copy.deepcopy(c) for _ in range(n_runs) for c in combinations]
         case _:
             raise ValueError("Invalid combination type")
         
     db_path = config['database_name']
     table_name = config['table_name']
+    if isinstance(table_name, (bool, type(None))): #Dynamic table naming
+        x_max, y_max = config['geometric_params']['geometric_config']['x_max'], config['geometric_params']['geometric_config']['y_max']
+        n_ellipses = config['geometric_params']['num_ellipses']
+        linear_penalization = config['penalizations']['linear']
+        table_name = f'x{x_max}y{y_max}n{n_ellipses}lambda{linear_penalization}_{config["optimization_type"]}'
+
     max_processes = config['max_processes']
     
     # Run experiments

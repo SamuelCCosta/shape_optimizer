@@ -24,11 +24,11 @@ class BaseSimulatedAnnealing(ABC):
         self.best_cost = float('inf')
         self.track_states = track_file_name is not None
         if self.track_states:
-            #tuples of type (temp, cost, accept prob, random number, passed, is_best, param)
+            #tuples of type (temp, cost, accept prob, passed, is_best, param)
             self.track_file_name = track_file_name
             with open(self.track_file_name, 'w', newline='') as f: #type:ignore
                 writer = csv.writer(f)
-                writer.writerow(['temp', 'cost', 'accept_prob', 'random_number', 'accepted', 'is_best', 'param'])
+                writer.writerow(['temp', 'cost', 'accept_prob', 'accepted', 'is_best', 'param'])
 
     @abstractmethod
     def get_neighbour(self, state) -> Any:
@@ -61,11 +61,11 @@ class BaseSimulatedAnnealing(ABC):
         self.temp *= self.cooling_rate
         return None
     
-    def _log_state(self, temp, cost, accept_prob, random_number, accepted, is_best, param):
+    def _log_state(self, temp, cost, accept_prob, accepted, is_best, param):
         if self.track_states:
             with open(self.track_file_name, 'a', newline='') as f: #type:ignore
                 writer = csv.writer(f)
-                row = [temp, cost, accept_prob, random_number, accepted, is_best, param]
+                row = [temp, cost, accept_prob, accepted, is_best, param]
                 clean_row = [item.item() if isinstance(item, (np.floating, np.integer)) else item for item in row]
                 clean_row[-1] = json.dumps(clean_row[-1])
                 writer.writerow(clean_row)
@@ -80,7 +80,7 @@ class BaseSimulatedAnnealing(ABC):
         self.best_state = current_state
         self.best_cost = current_cost
         if self.track_states:
-            self._log_state(self.temp, current_cost, 1.0, 0.0, True, True, current_state)
+            self._log_state(self.temp, current_cost, 1.0, True, True, current_state)
 
         while self.temp > self.min_temp:
             neighbour_cost = float('inf')
@@ -99,14 +99,14 @@ class BaseSimulatedAnnealing(ABC):
 
                 is_best = current_cost < self.best_cost
                 if self.track_states:
-                    self._log_state(self.temp, neighbour_cost, test, random_number, True, is_best, neighbour_state)
+                    self._log_state(self.temp, neighbour_cost, test, True, is_best, neighbour_state)
 
                 if is_best:
                     self.best_state = current_state
                     self.best_cost = current_cost
             
             elif self.track_states:
-                self._log_state(self.temp, neighbour_cost, test, random_number, False, False, neighbour_state)
+                self._log_state(self.temp, neighbour_cost, test, False, False, neighbour_state)
 
             self.update_temperature()
 
@@ -149,7 +149,7 @@ class DirectSimulatedAnnealing(ABC):
             self.track_file_name = track_file_name
             with open(self.track_file_name, 'w', newline='') as f: #type:ignore
                 writer = csv.writer(f)
-                writer.writerow(['temp', 'effective_cooling', 'current_markov_length', 'perturbation', 'best_cost', 'best_param', 'cost_gap'])
+                writer.writerow(['temp', 'effective_cooling', 'current_markov_length', 'perturbation', 'best_cost', 'best_param', 'cost_gap', 'current_params'])
 
     @abstractmethod
     def get_neighbour(self, state) -> Any:
@@ -230,14 +230,14 @@ class DirectSimulatedAnnealing(ABC):
         bisect.insort(self.configurations, (new_state, new_cost), key=lambda x: x[1])
         return None
         
-    def _log_state(self, temp, effective_cooling, current_markov_length, perturbation, best_cost, best_param, cost_gap):
+    def _log_state(self, temp, effective_cooling, current_markov_length, perturbation, best_cost, best_param, cost_gap, current_params):
         if self.track_states:
             with open(self.track_file_name, 'a', newline='') as f: #type:ignore
                 writer = csv.writer(f)
                 
                 # Only log the first 5 elements of perturbation (yes, hardcoded)
                 log_perturbation = perturbation[:5] if isinstance(perturbation, list) else perturbation
-                row = [temp, effective_cooling, current_markov_length, log_perturbation, best_cost, best_param, cost_gap]
+                row = [temp, effective_cooling, current_markov_length, log_perturbation, best_cost, best_param, cost_gap, current_params]
                 clean_row = [item.item() if isinstance(item, (np.floating, np.integer)) else item for item in row]
                 clean_row[3] = json.dumps(clean_row[3])
                 clean_row[5] = json.dumps(clean_row[5])
@@ -252,7 +252,7 @@ class DirectSimulatedAnnealing(ABC):
         
         if self.track_states:
             self._log_state(self.temp, self.effective_cooling, self.current_markov_length, 
-                            self.perturbation, self.best_cost(), self.configurations[0][0], self.cost_gap())
+                            self.perturbation, self.best_cost(), self.configurations[0][0], self.cost_gap(), self.configurations)
 
 
         while (any(p > m for p, m in zip(self.perturbation, self.min_perturbation))) or \
@@ -286,7 +286,7 @@ class DirectSimulatedAnnealing(ABC):
             
             if self.track_states:
                 self._log_state(self.temp, self.effective_cooling, self.current_markov_length, 
-                                self.perturbation, self.best_cost(), self.configurations[0][0], self.cost_gap())
+                                self.perturbation, self.best_cost(), self.configurations[0][0], self.cost_gap(), self.configurations)
         
         return self.configurations[0]
 

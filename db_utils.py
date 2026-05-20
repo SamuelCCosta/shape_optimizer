@@ -2,41 +2,25 @@ import sqlite3
 import json
 import multiprocessing as mp
 
-def database_writer(queue: mp.Queue, column_names: dict, db_path="experiments.db", table_name="results"):
-    '''Given a queue, listens indefinitely and writes to the database when the queue is non empty.
+def database_writer(queue: mp.Queue, db_path="experiments.db", table_name="results"):
+    '''Given a queue, listens indefinitely and updates the database when the queue is non empty.
        The function terminates when a None object is inserted in the queue.'''
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Create table with just the primary key if it doesn't exist
-    cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (run_id INTEGER PRIMARY KEY AUTOINCREMENT)")
-    
-    # Fetch existing columns to dynamically alter table if new configurations are introduced
-    cursor.execute(f"PRAGMA table_info({table_name})")
-    existing_columns = {row[1] for row in cursor.fetchall()}
-
-    # Add any missing columns dynamically
-    for name, sql_type in column_names.items():
-        if name not in existing_columns:
-            if sql_type not in ('REAL', 'INTEGER', 'TEXT'):
-                sql_type = 'REAL'
-            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {name} {sql_type}")
-            
-    conn.commit()
-
     while True:
-        record = queue.get()  # dict with column name and value or None
+        record = queue.get()
 
         if record is None:  # end of workers
             break
         
-        columns = list(record.keys())
-        columns_sql = ', '.join(columns)
-        placeholders_sql = ', '.join([f':{col}' for col in columns])
-
-        insert_sql = f'INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders_sql})'
-        cursor.execute(insert_sql, record)
+        run_id = record.pop('run_id')
+        set_clauses = ', '.join([f"{col} = :{col}" for col in record.keys()])
+        record['run_id'] = run_id
+        
+        update_sql = f'UPDATE {table_name} SET {set_clauses} WHERE run_id = :run_id'
+        cursor.execute(update_sql, record)
         conn.commit()
 
     conn.close()
@@ -69,8 +53,13 @@ def get_column_names_dict(geometric_params: dict, penalizations: dict, kwargs_op
     
     clean_geometric_params = {k: get_sql_type(v) for k, v in flat_geo.items()}
     
-    return (clean_kwargs_optimization | middle | clean_penalizations | 
-            clean_geometric_params | {'cpu_model': 'TEXT'})
+    final_dict = (clean_kwargs_optimization | middle | clean_penalizations | 
+                  clean_geometric_params | {'cpu_model': 'TEXT'})
+    
+    if 'track_file_name' in final_dict:
+        final_dict['track_file_name'] = final_dict.pop('track_file_name')
+        
+    return final_dict
 
 def unfold_parameters(parameters: dict):
     '''From a dictionary, unfolds dictionary values, if the value is a list or tuple outputs a JSON string.'''

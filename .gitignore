@@ -2,6 +2,7 @@
 *.out
 *.profile
 *.txt
+!requirements.txt
 *.msh
 *.p.o
 .direnv/

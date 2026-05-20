@@ -10,6 +10,7 @@ import time
 import copy
 import itertools
 import os
+import sqlite3
 from db_utils import database_writer, get_column_names_dict, unfold_parameters, get_cpu_model
 
 
@@ -170,7 +171,7 @@ class EllipseDSA(DirectSimulatedAnnealing):
         print(len(self.initial_configs), self.initial_configs)
 
 
-def optimization_worker_SA(queue : mp.Queue, geometric_params : dict, 
+def optimization_worker_SA(queue : mp.Queue, run_id: int, geometric_params : dict, 
                         penalizations : dict, kwargs_SA : dict, initial_params : list = []):
     '''Defines the routine of an optimization worker'''
     solver = EllipseSA(geometric_params, penalizations, **kwargs_SA)
@@ -186,24 +187,20 @@ def optimization_worker_SA(queue : mp.Queue, geometric_params : dict,
     runtime = time.time() - start_time
 
     # Get all the values into the SQL queue
-    run_parameters = kwargs_SA.copy()
-    run_parameters['runtime'] = runtime
-    run_parameters['best_param'] = best_param
-    run_parameters['best_cost'] = best_cost
-    run_parameters['initial_params'] = actual_initial_params
-    # run_parameters already has 'perturbation' from kwargs_SA
-
-    for pen_type in penalizations:
-        run_parameters[pen_type + '_penalization'] = penalizations[pen_type]
-    run_parameters |= geometric_params
-
-    run_parameters['cpu_model'] = get_cpu_model()
+    update_parameters = {
+        'run_id': run_id,
+        'runtime': runtime,
+        'best_param': best_param,
+        'best_cost': best_cost,
+        'initial_params': actual_initial_params,
+        'cpu_model': get_cpu_model()
+    }
     #Convert all non-number values into JSON strings
-    run_parameters = unfold_parameters(run_parameters)
+    update_parameters = unfold_parameters(update_parameters)
 
-    queue.put(run_parameters)
+    queue.put(update_parameters)
 
-def optimization_worker_DSA(queue : mp.Queue, geometric_params : dict, 
+def optimization_worker_DSA(queue : mp.Queue, run_id: int, geometric_params : dict, 
                         penalizations : dict, kwargs_DSA : dict):
     '''Defines the routine of a DSA optimization worker'''
     solver = EllipseDSA(geometric_params, penalizations, **kwargs_DSA)
@@ -212,21 +209,18 @@ def optimization_worker_DSA(queue : mp.Queue, geometric_params : dict,
     runtime = time.time() - start_time
 
     # Get all the values into the SQL queue
-    run_parameters = kwargs_DSA.copy()
-    run_parameters['runtime'] = runtime
-    run_parameters['best_param'] = best_param
-    run_parameters['best_cost'] = best_cost
-    run_parameters['initial_params'] = solver.initial_configs #store all initializers
-
-    for pen_type in penalizations:
-        run_parameters[pen_type + '_penalization'] = penalizations[pen_type]
-    run_parameters |= geometric_params
-
-    run_parameters['cpu_model'] = get_cpu_model()
+    update_parameters = {
+        'run_id': run_id,
+        'runtime': runtime,
+        'best_param': best_param,
+        'best_cost': best_cost,
+        'initial_params': solver.initial_configs, #store all initializers
+        'cpu_model': get_cpu_model()
+    }
     #Convert all non-number values into JSON strings
-    run_parameters = unfold_parameters(run_parameters)
+    update_parameters = unfold_parameters(update_parameters)
 
-    queue.put(run_parameters)
+    queue.put(update_parameters)
 
 def _traverse_and_find_lists(config_bundle):
     paths = []
@@ -308,30 +302,61 @@ def run_experiments(worker_target, combinations, extra_worker_args=(),
         paramtype=list
     )
     
+    # --- SETUP DATABASE & INITIAL INSERTS ---
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (run_id INTEGER PRIMARY KEY AUTOINCREMENT)")
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    for name, sql_type in column_names.items():
+        if name not in existing_columns:
+            if sql_type not in ('REAL', 'INTEGER', 'TEXT'):
+                sql_type = 'REAL'
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {name} {sql_type}")
+            
+    db_name = os.path.splitext(os.path.basename(db_path))[0]
+    
+    for combo_bundle in combinations:
+        run_parameters = combo_bundle['kwargs_optimization'].copy()
+        for pen_type in combo_bundle['penalizations']:
+            run_parameters[pen_type + '_penalization'] = combo_bundle['penalizations'][pen_type]
+        run_parameters |= combo_bundle['geometric_params']
+        run_parameters = unfold_parameters(run_parameters)
+        
+        columns = list(run_parameters.keys())
+        columns_sql = ', '.join(columns)
+        placeholders_sql = ', '.join([f':{col}' for col in columns])
+        insert_sql = f'INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders_sql})'
+        cursor.execute(insert_sql, run_parameters)
+        run_id = cursor.lastrowid
+        combo_bundle['run_id'] = run_id
+        
+        track_file_name = combo_bundle['kwargs_optimization'].get('track_file_name')
+        if track_file_name is not None and not isinstance(track_file_name, str):
+            csv_dir = f'track_csv/{db_name}/{table_name}'
+            os.makedirs(csv_dir, exist_ok=True)
+            path = f'{csv_dir}/{run_id}.csv'
+            combo_bundle['kwargs_optimization']['track_file_name'] = path
+            cursor.execute(f"UPDATE {table_name} SET track_file_name = ? WHERE run_id = ?", (path, run_id))
+            
+    conn.commit()
+    conn.close()
+    
     spawn_ctx = mp.get_context('spawn')
     queue = spawn_ctx.Queue()
-    db_writer = spawn_ctx.Process(target=database_writer, args=(queue, column_names, db_path, table_name))
+    db_writer = spawn_ctx.Process(target=database_writer, args=(queue, db_path, table_name))
     db_writer.start()
 
     active_workers = []
 
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    db_name = os.path.splitext(os.path.basename(db_path))[0]
-
-    for n, combo_bundle in enumerate(combinations, start=1):
+    for combo_bundle in combinations:
         if len(active_workers) >= max_processes:
             sentinels = [w.sentinel for w in active_workers]
             wait(sentinels)
             active_workers = [w for w in active_workers if w.is_alive()]
 
-        track_file_name = combo_bundle['kwargs_optimization'].get('track_file_name')
-        if track_file_name is not None and not isinstance(track_file_name, str): #active, not hardcoded
-            csv_dir = f'track_csv/{db_name}/{table_name}/{timestamp}'
-            os.makedirs(csv_dir, exist_ok=True)
-            combo_bundle['kwargs_optimization']['track_file_name'] = f'{csv_dir}/{n}.csv'
-
         w = spawn_ctx.Process(target=worker_target, 
-                              args=(queue, combo_bundle['geometric_params'], 
+                              args=(queue, combo_bundle['run_id'], combo_bundle['geometric_params'], 
                               combo_bundle['penalizations'], combo_bundle['kwargs_optimization'], *extra_worker_args))
         w.start()
         active_workers.append(w)
@@ -342,6 +367,71 @@ def run_experiments(worker_target, combinations, extra_worker_args=(),
     queue.put(None)
     db_writer.join()
     print('Done')
+
+
+if __name__ == '__main__':
+    geometric_params = {
+        "geometric_config" : {'x_max': 1.0, 'y_max': 1.0, 'MW_x': 0.3, 'ME_x': 0.7},
+        "h" : 0.02,
+        "heat_sources" : 10.0,
+        "base_temp" : 0.0,
+        "num_ellipses" : 2
+    }
+    
+    penalizations ={
+        'linear' : 16.0
+    }
+
+    kwargs_SA = {
+        'initial_temp' : [1000] * 10,
+        'min_temp' : 0.0001,
+        'cooling_rate' : 0.995,
+        'track_file_name' : True,
+        'gen_seed' : 0, # 0 = no seed 
+        'perturbation' : (0.08, 0.08, 4.0, 8.0, 4.0) # SA perturbation
+    }
+
+    kwargs_DSA = {
+        'initial_temp' : 100.0, 'min_temp' : 0.01,
+        'cooling_rate_max' : 0.99, 'cooling_rate_min' : 0.95,
+        'base_markov_length' : 25, 'num_configs' : 50,
+        'initial_perturbation' : (0.08, 0.08, 4.0, 8.0, 4.0), 'min_perturbation' : (0.01, 0.01, 0.5, 1.0, 0.5),
+        'perturbation_update': 0.99,
+        'min_cost_gap' : 0.01, 'track_file_name' : None,
+        'gen_seed' : 0 # 0 = no seed
+    }
+    
+    optimization_type = 'SA'
+    max_processes = 10
+    database_name = 'experiments.db'
+    table_name = 'x1y1n2lambda16_SA'
+    n_runs = 0 # NOT IMPLEMENTED YET
+
+    if optimization_type == 'SA':
+        combinations = build_grid_combinations(geometric_params, penalizations, kwargs_SA)
+        run_experiments(optimization_worker_SA, combinations, extra_worker_args=(),
+                    db_path = database_name, table_name = table_name, max_processes = max_processes)
+    elif optimization_type == 'DSA':
+        combinations = build_grid_combinations(geometric_params, penalizations, kwargs_DSA)
+        run_experiments(optimization_worker_DSA, combinations, extra_worker_args=(),
+                    db_path = database_name, table_name = table_name, max_processes = max_processes)
+    else:
+        raise ValueError("Invalid optimization type")
+    
+
+    '''
+    Geometric info (constant in every optimization) : geometric_params
+    Penalization info : penalizations
+    Any SA/DSA info : best_params, best_cost, runtime
+    SA specific info : kwargs_SA, initial_params
+    DSA specific info : kwargs_DSA, ... (WIP)
+    '''
+
+
+
+
+
+    
 
 
 if __name__ == '__main__':
