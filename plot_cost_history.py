@@ -164,10 +164,11 @@ def plot_all_tables_cost_history(db_path, output_folder, min_iter=None, max_iter
 
 if __name__ == '__main__':
     # Example Usage
-    db_path = 'experiments.db'
-    table_name = 'x1y1n2lambda16_SA'
+    db_path = 'jasminum-remote.db'
+    table_name = 'results'
     run_ids = [i for i in range(1,10)]
     run_ids = [7, 10] #7 , 10
+    run_ids = [i for i in range(1,31)]
     min_iter = None
     max_iter = None
 

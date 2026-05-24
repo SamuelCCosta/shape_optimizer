@@ -6,11 +6,11 @@ import time
 #h = 0.02
 heat_source = 10.0
 base_temp = 0.0
-num_ellipses = 4
+num_ellipses = 0
 geometric_info = {'x_max' : 1.0, 'y_max' : 1.0, 'MW_x' : 0.3, 'ME_x' : 0.7}
 big_area = geometric_info['x_max'] * geometric_info['y_max']
 
-penalization = 8.0
+penalization = 0.0
 radius = 0.05
 AC_param = (1 / radius) ** 2
 params = [0.5, 0.5, AC_param, 0.0, AC_param]
@@ -20,27 +20,28 @@ print(f'{penalization=}')
 h_values = [0.02]
 
 params = [
-  0.7140744550877801,
-  0.8084752847524989,
-  323.910908739876,
-  -64.06973330334914,
-  358.9984573566974,
-  0.8770311056021156,
-  0.20938680977638013,
-  297.5637774573435,
-  -22.75745330312562,
-  121.67303229256659,
-  0.8700388561011926,
-  0.6911367346200966,
-  515.9118472380815,
-  130.6976341989308,
-  325.5308045524322,
-  0.33735004032166704,
-  0.4867808895759328,
-  15.266611718741553,
-  4.793988330098576,
-  6.174042863735902
+  0.8618206759053694,
+  0.638244200440503,
+  225.67493248788125,
+  -160.57422243346917,
+  280.5987404955669,
+  0.8379835207017033,
+  0.3939957829236339,
+  192.45436487876822,
+  -21.333606792881376,
+  78.24251380072735,
+  0.15718368156532972,
+  0.11260201636280878,
+  398.10059552791836,
+  -241.77576084751604,
+  451.12919820660574,
+  0.3854623436369899,
+  0.4835325070889105,
+  14.240792213872059,
+  7.025599246051849,
+  8.336150579822723
 ]
+params=[]
 
 
 @concurrent.process(timeout = 30.0)
@@ -132,11 +133,12 @@ if __name__ == '__main__':
             penalized_cost = objective + (percent_area * penalization)
             
             print(f"{h_test:8.3f} | {elapsed:10.4f} | {objective:12.4f} | {penalized_cost:12.4f}")
-            
-            grad = get_gradient(params, h_test)
-            print(f"  -> Forward Gradient: {[round(g, 4) if not np.isnan(g) else 'NaN' for g in grad]}")
-            grad_central = get_gradient_central(params, h_test)
-            print(f"  -> Central Gradient: {[round(g, 4) if not np.isnan(g) else 'NaN' for g in grad_central]}")
+            calculate_gradient = False
+            if calculate_gradient:
+                grad = get_gradient(params, h_test)
+                print(f"  -> Forward Gradient: {[round(g, 4) if not np.isnan(g) else 'NaN' for g in grad]}")
+                grad_central = get_gradient_central(params, h_test)
+                print(f"  -> Central Gradient: {[round(g, 4) if not np.isnan(g) else 'NaN' for g in grad_central]}")
         except Exception as e:
             elapsed = time.perf_counter() - start_time
             # Captura Crash de C++ (ProcessExpired, BrokenProcessPool, etc)

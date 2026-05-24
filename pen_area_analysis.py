@@ -48,7 +48,7 @@ def analyze_results(db_path="experiments.db", table_name="results", plot = False
             area_percent = (full_area - ellipses_area) / full_area
             raw_cost = total_cost - penalty_factor * area_percent
 
-            print(f"{run_id:<8} | {total_cost:<12.6f} | {penalty_factor:<12.1f} | {raw_cost:<12.10f} | {f'{area_percent*100:.4f}%':<18}")
+            print(f"{run_id:<8} | {total_cost:<12.6f} | {penalty_factor:<12.2f} | {raw_cost:<12.10f} | {f'{area_percent*100:.4f}%':<18}")
 
             if plot:
                 penalties.append(penalty_factor)
@@ -156,5 +156,5 @@ def plot_domains(db_path="experiments.db", table_name = "results"):
 
 
 if __name__ == '__main__':
-    analyze_results(db_path="experiments.db", table_name="x1y1n2lambda16_SA", plot=False)
+    analyze_results(db_path="jasminum-remote.db", table_name="results", plot=False)
     #plot_domains()

@@ -24,7 +24,7 @@ def get_params_from_db(db_path, table_name, run_id):
         best_params = json.loads(row[1])
         x_max = float(row[2])
         y_max = float(row[3])
-        print(initial_params, best_params, x_max, y_max)
+        #print(initial_params, best_params, x_max, y_max)
         return initial_params, best_params, x_max, y_max
     
     return None, None, None, None
@@ -68,8 +68,8 @@ def plot_initial_and_best_params(initial_params, best_params, x_max, y_max):
 
 
 if __name__ == '__main__':
-    db_path = 'experiments.db'
+    db_path = 'jasminum-remote.db'
     table_name = 'results'
     #table_name = 'results'
-    run_id = 52
+    run_id = 1
     plot_initial_and_best_params(*get_params_from_db(db_path, table_name, run_id))
