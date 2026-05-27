@@ -70,7 +70,7 @@ class Ellipse {
             return parametrize_matrix * point;
         }
 
-        bool is_inside(Eigen::Vector2d point) const { return evaluate_at(point) <= 1; }
+        bool is_inside(Eigen::Vector2d point) const { return evaluate_at(point) <= 1.0; }
 };
 
 
@@ -85,6 +85,10 @@ class EllipseBundle {
         x_max(geometric_config["x_max"]), y_max(geometric_config["y_max"]), MW_x(geometric_config["MW_x"]),
         ME_x(geometric_config["ME_x"]), h(h_param), num_ellipses(n_ellipses) {bundle.reserve(n_ellipses);}
             
+        bool is_empty() const {
+            return bundle.empty();
+        }
+
         void add(const Ellipse &new_ellipse){
             check_intersections(new_ellipse);
             bundle.push_back(new_ellipse);

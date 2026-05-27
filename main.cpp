@@ -5,7 +5,7 @@
 using namespace maniFEM;
 
 void objective_ellipses(){
-    const double h = 0.02;
+    const double h = 0.015;
 
     const double heat_source = 10.0; //condição neumann fronteira superior
     const double base_temp = 0.0; //condição dirichlet na base
@@ -16,21 +16,26 @@ void objective_ellipses(){
     //bool export_domain = false, export_solution = false;
     //SquareSolver sqs = SquareSolver(geometric_info, h, heat_source, base_temp, export_domain, export_solution);
 
-    SquareSolver sqs = SquareSolver(geometric_info, h, heat_source, base_temp, true, true);
+    SquareSolver sqs = SquareSolver(geometric_info, h, heat_source, base_temp, false, false);
 
     EllipseBundle bundle(geometric_info, h, num_ellipses);
-    
-    bundle.add(Ellipse(0.3, 0.5, 27.777, -16.666, 27.777));
-    bundle.add(Ellipse(0.7, 0.5, 27.777, -16.666, 27.777));
+    /*
+    bundle.add(Ellipse(0.8618206759053694, 0.638244200440503, 225.67493248788125, -160.57422243346917, 280.5987404955669));
+    bundle.add(Ellipse(0.8379835207017033, 0.3939957829236339, 192.45436487876822, -21.333606792881376, 78.24251380072735));
+    bundle.add(Ellipse(0.15718368156532972, 0.11260201636280878, 398.10059552791836, -241.77576084751604, 451.12919820660574));
+    bundle.add(Ellipse(0.3854623436369899, 0.4835325070889105, 14.240792213872059, 7.025599246051849, 8.336150579822723));
+    */
+    //bundle.add(Ellipse(0.3, 0.3, 81.0, 15.0, 81.0));
 
-    /*bundle.add(Ellipse(0.53446306, 0.50259374, 243.77396884, -33.96889496, 261.82802112));
-    bundle.add(Ellipse(0.42235164, 0.70059529, 233.99220896, -43.95489961, 288.09370986));
-    bundle.add(Ellipse(0.56719944, 0.34218724, 289.65241533, -106.94255163, 203.10652993));
-    bundle.add(Ellipse(0.46513083, 0.8759024, 208.72228596, 71.36566829, 130.41681181));*/
+    const double pen = 0.0;
+    double area_percent = 1-bundle.area();
+    double final_pen = pen * area_percent;
 
     double final_result = sqs.solve(bundle);
 
-    std::cout << final_result << std::endl;
+    std::cout << "No pen: " << final_result << std::endl;
+    std::cout << "Penalization: " << final_pen << std::endl;
+    std::cout << "Penalized: " << final_result + final_pen << std::endl;
 }
 
 int main(){

@@ -86,5 +86,6 @@ PYBIND11_MODULE(square_solver, m) {
         .def_readonly("export_result", &SquareSolver::export_result)
 
         // Methods
-        .def("solve", &SquareSolver::solve, py::arg("bundle"));
+        .def("solve", &SquareSolver::solve, py::arg("bundle"))
+        .def("solve_frontal", &SquareSolver::solve_frontal, py::arg("bundle"));
 }

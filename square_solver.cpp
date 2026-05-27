@@ -1,4 +1,5 @@
 #include "square_solver.h"
+#include <delaunator.hpp>
 
 SquareSolver::SquareSolver(std::map<std::string, double> &geometric_config,
     const double h_param,
@@ -53,14 +54,24 @@ SquareSolver::SquareSolver(std::map<std::string, double> &geometric_config,
     SquareSolver(geometric_config, h_param, heat_srcs, base_tmp, false, false) {}
 
 
-double SquareSolver::solve(EllipseBundle &bundle) {
+double SquareSolver::solve_frontal(EllipseBundle &bundle) {
+    constexpr bool EXPORT_BOUNDARY = true;
+
+
     ambient.set_as_working_manifold();
     Function xy = ambient.coordinates();   
     Function x = xy[0], y = xy[1]; 
 
-    Mesh inner_boundary = bundle.total_mesh();
-    Mesh boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(inner_boundary);
-    //boundary.export_to_file(tag::gmsh, "boundary_debug.msh"); //debug
+    Mesh boundary{tag::non_existent};
+    
+    if (bundle.is_empty()) {
+        boundary = square_boundary;
+    } else {
+        Mesh inner_boundary = bundle.total_mesh();
+        boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(inner_boundary);
+    }
+
+    if (EXPORT_BOUNDARY) { boundary.export_to_file(tag::gmsh, "boundary.msh"); }
 
     const Mesh domain = Mesh::Build(tag::frontal).boundary(boundary).desired_length(h);
     std::map<Cell, size_t> numbering = create_numbering(domain);
@@ -93,6 +104,218 @@ double SquareSolver::solve(EllipseBundle &bundle) {
     }
 
     return objective_no_penalty(solution, numbering); 
+}
+
+double SquareSolver::solve(EllipseBundle &bundle) {
+    constexpr bool EXPORT_BOUNDARY = false;
+    constexpr bool DELAUNAY_SOLVER_VERBOSITY = false;
+
+    ambient.set_as_working_manifold();
+    Function xy = ambient.coordinates();   
+    Function x = xy[0], y = xy[1]; 
+
+    Mesh boundary{tag::non_existent};
+    Mesh inner_boundary{tag::non_existent};
+    
+    if (bundle.is_empty()) {
+        boundary = square_boundary;
+    } else {
+        inner_boundary = bundle.total_mesh();
+        boundary = Mesh::Build(tag::join).mesh(square_boundary).mesh(inner_boundary);
+    }
+
+    if (EXPORT_BOUNDARY) { boundary.export_to_file(tag::gmsh, "boundary.msh"); }
+
+    // We start with Eigen::Vector2d and we only build the Cell objects when making the final mesh
+
+    // rows of points spread "uniformly" across the entire domain, already cleaned up
+    std::vector<Eigen::Vector2d> delaunay_grid = get_delaunay_grid(bundle);
+
+    // get coords and segments vector (coords of boundary + delaunay grid, map with segments)
+    std::vector<double> delaunay_coords;
+    delaunay_coords.reserve(2 * (delaunay_grid.size() + boundary.number_of(tag::vertices)));
+    
+    // this way we have a bijection, necessary to build the domain later 
+    std::map<Cell, size_t> numbering;
+    std::vector<Cell> cells;
+    cells.reserve(delaunay_grid.size() + boundary.number_of(tag::vertices));
+    size_t counter = 0;
+    //empty block to hide iterators
+    //we are iterating through the inner boundary first for some filtering later
+    {
+    if (inner_boundary.exists()) {
+        Mesh::Iterator it_inner = inner_boundary.iterator(tag::over_vertices);
+        for (it_inner.reset(); it_inner.in_range(); it_inner++) {
+            Cell P = *it_inner;
+            // could have used create_numbering, but this way we guarantee it has the exact same order
+            numbering[P] = counter;
+            cells.push_back(P);
+            counter++;
+            delaunay_coords.push_back(x(P));
+            delaunay_coords.push_back(y(P));
+        }
+    }
+    // at this point, counter = n_vertices_inner - 1
+    Mesh::Iterator it_outer = square_boundary.iterator(tag::over_vertices);
+    for (it_outer.reset(); it_outer.in_range(); it_outer++) {
+        Cell P = *it_outer;
+        // could have used create_numbering, but this way we guarantee it has the exact same order
+        numbering[P] = counter;
+        cells.push_back(P);
+        counter++;
+        delaunay_coords.push_back(x(P));
+        delaunay_coords.push_back(y(P));
+    }
+    // at this point, counter = n_vertices_bdry - 1
+    for (auto &point : delaunay_grid) {
+        delaunay_coords.push_back(point.x());
+        delaunay_coords.push_back(point.y());
+        Cell A(tag::vertex, tag::of_coords, {point.x(), point.y()});
+        numbering[A] = counter;
+        cells.push_back(A);
+        counter++;
+    }
+    // at this point, every single point in the domain has a unique ID
+    if (DELAUNAY_SOLVER_VERBOSITY) {
+        std::cout << "cells size: " << cells.size() << std::endl;
+        std::cout << "numbering size: " <<numbering.size() << std::endl;
+        std::cout << "delaunay_coords size: " <<delaunay_coords.size() << std::endl;
+    }
+    }
+
+    std::map<std::pair<int,int>, Cell> segments;
+    auto cell_id = [numbering](Cell A) { return numbering.at(A);};
+
+
+    auto insert_segment = [cell_id, &segments](Cell seg) {
+        Cell A = seg.base().reverse(), B = seg.tip();
+        int idA = cell_id(A), idB = cell_id(B);
+        int min_id = std::min(idA, idB), max_id = std::max(idA, idB);
+        segments.insert({{min_id, max_id}, seg});
+    };
+
+    auto get_segment = [cell_id, &segments] (Cell base, Cell tip) {
+        int id_base = cell_id(base), id_tip = cell_id(tip);
+        int min_id = std::min(id_base, id_tip), max_id = std::max(id_base, id_tip);
+        // Check for existence and retrieve in the correct order
+        auto finder = segments.find({min_id, max_id});
+        if (finder != segments.end()) {
+            Cell seg = finder->second;
+            return (seg.tip() == tip) ? seg : seg.reverse();
+        } else {
+            Cell seg(tag::segment, base.reverse(), tip);
+            segments.insert({{min_id, max_id}, seg});
+            return seg;
+        }
+    };
+
+    // Filling up segments map
+    {
+    Mesh::Iterator it = boundary.iterator(tag::over_segments);
+    for (it.reset(); it.in_range(); it++) { insert_segment(*it); }
+    }
+    // Delaunay triangulation
+    delaunator::Delaunator delaunay(delaunay_coords);
+    std::vector<std::size_t> triangles = delaunay.triangles;
+    
+    if (DELAUNAY_SOLVER_VERBOSITY) {
+        std::cout << "number of triangles before filtering: " << triangles.size() / 3 << std::endl;
+    }
+
+    // build final mesh
+    Mesh domain(tag::fuzzy, tag::of_dim, 2);
+    size_t bdry_upper_bound = inner_boundary.exists() ? inner_boundary.number_of(tag::vertices) : 0; //all ellipse boundary points have id < this
+    for (size_t i = 0; i < triangles.size(); i += 3) {
+        // Delaunator outputs triangles in clockwise order for a Y-up coordinate system.
+        // maniFEM expects counter-clockwise order for positive triangles, so we swap id1 and id2.
+        size_t id0 = triangles[i], id1 = triangles[i+2], id2 = triangles[i+1];
+        // Check if the triangle has every vertice in the ellipse boundary; if so, skip the current iteration
+        if (id0 < bdry_upper_bound && id1 < bdry_upper_bound && id2 < bdry_upper_bound) { continue; }
+
+        // WARNING: IT MIGHT REMOVE TRIANGLES WITH POINTS THAT LIE IN DIFFERENT ELLIPSES (don't have a fix, for now)
+        Cell triangle(tag::triangle, get_segment(cells[id0], cells[id1]), get_segment(cells[id1], cells[id2]), get_segment(cells[id2], cells[id0]));
+        
+        triangle.add_to(domain);
+    }
+
+    if (DELAUNAY_SOLVER_VERBOSITY) {
+        std::cout << "number of triangles after filtering: " << domain.number_of(tag::cells_of_max_dim) << std::endl;
+    }
+    
+    if (export_domain) { domain.export_to_file(tag::gmsh, "domain.msh"); }
+
+    Eigen::VectorXd solution = build_laplace_solution(domain, numbering);
+
+    if (export_result) {
+        domain.export_to_file (tag::gmsh, "solution.msh", numbering);
+
+        //Incluir dados da solução no .msh
+        {
+        std::ofstream solution_file ("solution.msh", std::fstream::app);
+        solution_file << "$NodeData" << std::endl;
+        solution_file << "1" << std::endl;   // one string follows
+        solution_file << "\"Solution\"" << std::endl;
+        solution_file << "1" << std::endl;   //  one real follows
+        solution_file << "0.0" << std::endl;  // time [??]
+        solution_file << "3" << std::endl;   // three integers follow
+        solution_file << "0" << std::endl;   // time step [??]
+        solution_file << "1" << std::endl;  // scalar values of u
+        solution_file << domain.number_of (tag::vertices) << std::endl;  // number of values listed below
+        Mesh::Iterator it = domain.iterator (tag::over_vertices);
+        for (it .reset(); it .in_range(); it++)
+        {	Cell P = *it;
+            const size_t i = numbering [P];
+            solution_file << i+1 << " " << solution [i] << std::endl;   }
+        }
+    }
+
+    return objective_no_penalty(solution, numbering); 
+}
+
+
+std::vector<Eigen::Vector2d> SquareSolver::get_delaunay_grid(EllipseBundle &bundle) {
+    std::vector<Eigen::Vector2d> points;
+    // delta calculation to reject points too near to the ellipses
+    std::vector<double> deltas;
+    deltas.reserve(bundle.bundle.size());
+
+    const double threshold = 0.4 * h;
+    for (const auto &ellipse : bundle.bundle) {
+        double invs_ellipse_minor = 1 / ellipse.parametrize_matrix.col(1).norm();
+        double delta = 2 * threshold * invs_ellipse_minor + threshold * threshold * invs_ellipse_minor * invs_ellipse_minor;
+        deltas.push_back(delta);
+    }
+
+    const double sq3_over_2 = std::sqrt(3.0)/2;
+    int n_vertical_divisions =  static_cast<int>(std::round(x_max / h * sq3_over_2));
+    double dy = y_max / n_vertical_divisions;
+    // i = 1, ..., n_vert_divs - 1
+    for (int i = n_vertical_divisions - 1; i > 0; i--) {
+        double y = i * dy;
+        double offset = (i % 2) * h/2;
+        int j_max = static_cast<int>(std::round( (x_max - offset) / h ));
+
+        for (int j = 1; j < j_max - 1; j++){
+            double x = offset + j * h;
+            Eigen::Vector2d point(x, y);
+            bool is_outside_all = true;
+            int k = 0;
+            for (const auto &ellipse : bundle.bundle) {
+                double delta = deltas[k];
+                // in the worst case, a point can be excluded at approx 2.72*threshold (depends on eccentricity, with the formula 1/sqrt(1-ecc^2))
+                if (ellipse.evaluate_at(point) < 1.0 + delta) { //slightly bigger to exclude points close to boundary
+                    is_outside_all = false;
+                    break;
+                }
+                k++;
+            }
+            if (is_outside_all) {
+                points.push_back(point);
+            }
+        }
+    }
+
+    return points;
 }
 
 std::map<Cell, size_t> SquareSolver::create_numbering(const Mesh& mesh) {
@@ -234,7 +457,7 @@ double SquareSolver::objective_no_penalty(const Eigen::VectorXd &solution, const
     FiniteElement fe_bdry(tag::with_master, tag::segment, tag::Lagrange, tag::of_degree, 1);
     Integrator integr_bdry = fe_bdry.set_integrator(tag::Gauss, tag::seg_3);
     
-    Mesh::Iterator it = north.iterator(tag::over_cells_of_max_dim);
+    Mesh::Iterator it = sources.iterator(tag::over_cells_of_max_dim);
     for(it.reset(); it.in_range(); it++){
         Cell seg = *it;
         fe_bdry.dock_on(seg);
