@@ -16,7 +16,7 @@ void objective_ellipses(){
     //bool export_domain = false, export_solution = false;
     //SquareSolver sqs = SquareSolver(geometric_info, h, heat_source, base_temp, export_domain, export_solution);
 
-    SquareSolver sqs = SquareSolver(geometric_info, h, heat_source, base_temp, false, false);
+    SquareSolver sqs = SquareSolver(geometric_info, h, heat_source, base_temp, true, false);
 
     EllipseBundle bundle(geometric_info, h, num_ellipses);
     /*
@@ -27,6 +27,13 @@ void objective_ellipses(){
     */
     //bundle.add(Ellipse(0.3, 0.3, 81.0, 15.0, 81.0));
 
+    //bundle.add(Ellipse(0.33, 0.33, 11.111111, 0.0, 69.444444));
+    //bundle.add(Ellipse(0.675, 0.675, 69.444444, 0.0, 11.111111));
+
+    bundle.add(Ellipse(0.6761914390629538, 0.8331474909659954, 234.62634533093578, 55.20225964246275, 294.41739831068963));
+    bundle.add(Ellipse(0.14177601073689275, 0.38267316545502855, 166.83879221822332, -70.30573735061755, 214.1889264220846));
+    bundle.add(Ellipse(0.38952921827986187, 0.4131190477291755, 178.83633814702222, -3.5752206604725445, 70.3255660637861));
+    bundle.add(Ellipse(0.8981855297026812, 0.696113885664253, 241.26170879026645, -26.515173296621807, 269.63343984075857));
     const double pen = 0.0;
     double area_percent = 1-bundle.area();
     double final_pen = pen * area_percent;

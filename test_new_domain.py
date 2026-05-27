@@ -91,6 +91,7 @@ if __name__ == '__main__':
     test_new_domain(N=100, num_ellipses=4, csv_filename='test_new_domain.csv')
 
 '''
+exact same parameters in both runs (starting_seed = 1000) (NOT SURE)
 h = 0.02
 Total runs evaluated: 100
 ----------------------------------------

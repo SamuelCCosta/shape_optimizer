@@ -55,8 +55,7 @@ SquareSolver::SquareSolver(std::map<std::string, double> &geometric_config,
 
 
 double SquareSolver::solve_frontal(EllipseBundle &bundle) {
-    constexpr bool EXPORT_BOUNDARY = true;
-
+    constexpr bool EXPORT_BOUNDARY = false;
 
     ambient.set_as_working_manifold();
     Function xy = ambient.coordinates();   
@@ -232,8 +231,10 @@ double SquareSolver::solve(EllipseBundle &bundle) {
         // Check if the triangle has every vertice in the ellipse boundary; if so, skip the current iteration
         if (id0 < bdry_upper_bound && id1 < bdry_upper_bound && id2 < bdry_upper_bound) { continue; }
 
-        // WARNING: IT MIGHT REMOVE TRIANGLES WITH POINTS THAT LIE IN DIFFERENT ELLIPSES (don't have a fix, for now)
-        Cell triangle(tag::triangle, get_segment(cells[id0], cells[id1]), get_segment(cells[id1], cells[id2]), get_segment(cells[id2], cells[id0]));
+        // WARNING: IT MIGHT REMOVE TRIANGLES WITH POINTS THAT LIE ON DIFFERENT ELLIPSES (don't have a fix, for now)
+        Cell triangle(tag::triangle, get_segment(cells[id0], cells[id1]), 
+                                     get_segment(cells[id1], cells[id2]), 
+                                     get_segment(cells[id2], cells[id0]));
         
         triangle.add_to(domain);
     }
@@ -242,6 +243,20 @@ double SquareSolver::solve(EllipseBundle &bundle) {
         std::cout << "number of triangles after filtering: " << domain.number_of(tag::cells_of_max_dim) << std::endl;
     }
     
+    constexpr bool SMOOTHENING = true;
+    if (SMOOTHENING){
+        Mesh::Iterator it = domain.iterator(tag::over_vertices);
+        constexpr int smooth_steps = 5;
+        for (int i = 0; i < smooth_steps; i++) {
+            for (it.reset(); it.in_range(); it++) {
+                Cell P = *it;
+                if ( P.is_inner_to(domain) ) {
+                    domain.barycenter(P);
+                }
+            }
+        }
+    }
+
     if (export_domain) { domain.export_to_file(tag::gmsh, "domain.msh"); }
 
     Eigen::VectorXd solution = build_laplace_solution(domain, numbering);
@@ -279,14 +294,14 @@ std::vector<Eigen::Vector2d> SquareSolver::get_delaunay_grid(EllipseBundle &bund
     std::vector<double> deltas;
     deltas.reserve(bundle.bundle.size());
 
-    const double threshold = 0.4 * h;
+    const double threshold = 0.4 * h; //distance in minor semi axis (lower bound)
     for (const auto &ellipse : bundle.bundle) {
-        double invs_ellipse_minor = 1 / ellipse.parametrize_matrix.col(1).norm();
+        double invs_ellipse_minor = 1 / ellipse.parametrize_matrix.col(1).norm(); // 1/b
         double delta = 2 * threshold * invs_ellipse_minor + threshold * threshold * invs_ellipse_minor * invs_ellipse_minor;
         deltas.push_back(delta);
     }
 
-    const double sq3_over_2 = std::sqrt(3.0)/2;
+    const double sq3_over_2 = std::sqrt(3.0)/2; //constexpr only in C++26
     int n_vertical_divisions =  static_cast<int>(std::round(x_max / h * sq3_over_2));
     double dy = y_max / n_vertical_divisions;
     // i = 1, ..., n_vert_divs - 1
@@ -295,14 +310,14 @@ std::vector<Eigen::Vector2d> SquareSolver::get_delaunay_grid(EllipseBundle &bund
         double offset = (i % 2) * h/2;
         int j_max = static_cast<int>(std::round( (x_max - offset) / h ));
 
-        for (int j = 1; j < j_max - 1; j++){
+        for (int j = 1; j < j_max; j++){
             double x = offset + j * h;
             Eigen::Vector2d point(x, y);
             bool is_outside_all = true;
             int k = 0;
             for (const auto &ellipse : bundle.bundle) {
                 double delta = deltas[k];
-                // in the worst case, a point can be excluded at approx 2.72*threshold (depends on eccentricity, with the formula 1/sqrt(1-ecc^2))
+                // in the worst case (ecc = 0.93), a point can be excluded at approx 2.72*threshold (depends on eccentricity, with the formula 1/sqrt(1-ecc^2))
                 if (ellipse.evaluate_at(point) < 1.0 + delta) { //slightly bigger to exclude points close to boundary
                     is_outside_all = false;
                     break;
