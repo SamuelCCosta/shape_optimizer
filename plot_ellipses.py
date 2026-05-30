@@ -68,8 +68,8 @@ def plot_initial_and_best_params(initial_params, best_params, x_max, y_max):
 
 
 if __name__ == '__main__':
-    db_path = 'jasminum-remote.db'
+    db_path = 'experiments.db'
     table_name = 'results'
     #table_name = 'results'
-    run_id = 1
+    run_id = 10
     plot_initial_and_best_params(*get_params_from_db(db_path, table_name, run_id))

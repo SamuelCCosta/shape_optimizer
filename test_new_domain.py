@@ -34,7 +34,7 @@ def test_new_domain(N, num_ellipses, csv_filename):
     h = 0.015
     heat_source = 10.0
     base_temp = 0.0
-    timeout_seconds = 5.0 # Max time allowed for a single solver run
+    timeout_seconds = 2.0 # Max time allowed for a single solver run
     
     spawn_ctx = mp.get_context('spawn')
     

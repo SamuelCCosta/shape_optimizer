@@ -1,10 +1,10 @@
 # Shape Optimizer Configuration
 optimization_type: SA # can be SA, DSA
 combination_type: zip # can be grid (cartesian product), zip
-max_processes: 3
-database_name: test_db_rework.db
-table_name: results_v2 # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
-n_runs: 3 # number of trials per configuration
+max_processes: 6
+database_name: experiments.db
+table_name: results # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
+n_runs: 6 # number of trials per configuration
 
 geometric_params:
   geometric_config:
@@ -12,24 +12,24 @@ geometric_params:
     y_max: 1.0
     MW_x: 0.3
     ME_x: 0.7
-  h: 0.02
+  h: 0.0125
   heat_sources: 10.0
   base_temp: 0.0
   num_ellipses: 4
 
 penalizations:
-  linear: 1.0
+  linear: 1.5
 
-kwargs_SA: #SA
-  initial_temp: 10
-  min_temp: 0.1
-  cooling_rate: 0.95
+kwargs_SA:
+  initial_temp: 1000
+  min_temp: 0.001
+  cooling_rate: 0.995
   perturbation: [0.08, 0.08, 4.0, 6.0, 4.0]
   track_file_name: true
   gen_seed: 0 # 0 = no seed
 
 
-kwargs_DSA: #DSA
+kwargs_DSA:
   initial_temp: 1000.0
   min_temp: 0.01
   cooling_rate_max: 0.99

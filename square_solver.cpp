@@ -223,15 +223,38 @@ double SquareSolver::solve(EllipseBundle &bundle) {
 
     // build final mesh
     Mesh domain(tag::fuzzy, tag::of_dim, 2);
-    size_t bdry_upper_bound = inner_boundary.exists() ? inner_boundary.number_of(tag::vertices) : 0; //all ellipse boundary points have id < this
+    const double max_edge_sq = 16.0 * h * h; // 4 * h maximum edge length
+    
     for (size_t i = 0; i < triangles.size(); i += 3) {
         // Delaunator outputs triangles in clockwise order for a Y-up coordinate system.
         // maniFEM expects counter-clockwise order for positive triangles, so we swap id1 and id2.
         size_t id0 = triangles[i], id1 = triangles[i+2], id2 = triangles[i+1];
-        // Check if the triangle has every vertice in the ellipse boundary; if so, skip the current iteration
-        if (id0 < bdry_upper_bound && id1 < bdry_upper_bound && id2 < bdry_upper_bound) { continue; }
 
-        // WARNING: IT MIGHT REMOVE TRIANGLES WITH POINTS THAT LIE ON DIFFERENT ELLIPSES (don't have a fix, for now)
+        // Edge length check to prevent giant triangles spanning across the domain
+        auto segment_too_big = [&delaunay_coords, max_edge_sq] (size_t _i, size_t _j) {
+            double dx01 = delaunay_coords[2*_i] - delaunay_coords[2*_j];
+            double dy01 = delaunay_coords[2*_j+1] - delaunay_coords[2*_j+1];
+            return dx01*dx01 + dy01*dy01 > max_edge_sq;
+        };
+
+        if (segment_too_big(id0, id1)) {continue;}
+        if (segment_too_big(id1, id2)) {continue;}
+        if (segment_too_big(id2, id0)) {continue;}
+
+        // Barycenter check to remove triangles inside the holes (ellipses)
+        double bary_x = (delaunay_coords[2*id0] + delaunay_coords[2*id1] + delaunay_coords[2*id2]) / 3.0;
+        double bary_y = (delaunay_coords[2*id0+1] + delaunay_coords[2*id1+1] + delaunay_coords[2*id2+1]) / 3.0;
+        Eigen::Vector2d barycenter(bary_x, bary_y);
+        
+        bool inside_hole = false;
+        for (const auto &ellipse : bundle.bundle) {
+            if (ellipse.is_inside(barycenter)) {
+                inside_hole = true;
+                break;
+            }
+        }
+        if (inside_hole) {continue;}
+
         Cell triangle(tag::triangle, get_segment(cells[id0], cells[id1]), 
                                      get_segment(cells[id1], cells[id2]), 
                                      get_segment(cells[id2], cells[id0]));
@@ -243,19 +266,57 @@ double SquareSolver::solve(EllipseBundle &bundle) {
         std::cout << "number of triangles after filtering: " << domain.number_of(tag::cells_of_max_dim) << std::endl;
     }
     
-    constexpr bool SMOOTHENING = true;
-    if (SMOOTHENING){
-        Mesh::Iterator it = domain.iterator(tag::over_vertices);
-        constexpr int smooth_steps = 5;
-        for (int i = 0; i < smooth_steps; i++) {
-            for (it.reset(); it.in_range(); it++) {
-                Cell P = *it;
-                if ( P.is_inner_to(domain) ) {
-                    domain.barycenter(P);
-                }
+    //barycentric smoothening
+    constexpr int smooth_steps = 1;
+    Mesh::Iterator it_smooth = domain.iterator(tag::over_vertices);
+    for (int i = 0; i < smooth_steps; i++) {
+        for (it_smooth.reset(); it_smooth.in_range(); it_smooth++) {
+            Cell P = *it_smooth;
+            if ( P.is_inner_to(domain) ) {
+                domain.barycenter(P);
             }
         }
     }
+
+    constexpr bool REPORT_SEGMENT_LENGTH = false;
+    if (REPORT_SEGMENT_LENGTH) {
+        auto length = [&x, &y](Cell seg) {
+            Cell base = seg.base().reverse(), tip = seg.tip();
+            return std::sqrt((x(base) - x(tip)) * (x(base) - x(tip)) + (y(base) - y(tip)) * (y(base) - y(tip)));
+        };
+
+        std::vector<double> lengths;
+        lengths.reserve(domain.number_of(tag::segments));
+
+        Mesh::Iterator it = domain.iterator(tag::over_segments);
+        for (it.reset(); it.in_range(); it++) {
+            Cell seg = *it;
+            lengths.push_back(length(seg));
+        }
+        std::sort(lengths.begin(), lengths.end());
+        
+        if (!lengths.empty()) {
+            double min_val = lengths.front();
+            double max_val = lengths.back();
+            
+            size_t n = lengths.size();
+            double median = (n % 2 == 0) ? (lengths[n / 2 - 1] + lengths[n / 2]) / 2.0 : lengths[n / 2];
+            
+            double sum = 0.0;
+            for (double l : lengths){ sum += l; }
+            double average = sum / n;
+            
+            double sq_sum = 0.0;
+            for (double l : lengths) sq_sum += (l - average) * (l - average);
+            double std_dev = std::sqrt(sq_sum / n);
+            
+            std::cout << "Smooth steps: " << smooth_steps << std::endl;
+            std::cout << "Segment lengths -> Min: " << min_val << ", Max: " << max_val 
+                      << ", Average: " << average << ", Median: " << median 
+                      << ", Std Dev: " << std_dev << std::endl;
+        }
+    }
+
 
     if (export_domain) { domain.export_to_file(tag::gmsh, "domain.msh"); }
 
@@ -433,10 +494,13 @@ Eigen::VectorXd SquareSolver::build_laplace_solution(const Mesh &domain, const s
                             Eigen::Lower | Eigen::Upper> cg;
 
     cg.compute(matrix_A);
+    if (cg.info() != Eigen::Success) {
+        throw std::runtime_error("Eigen solver compute failed.");
+    }
 
     Eigen::VectorXd solution = cg.solve(vector_b);
-    if(cg.info() != Eigen::Success) {
-        std::cout << "Eigen solver failed" << std::endl;
+    if (cg.info() != Eigen::Success) {
+        throw std::runtime_error("Eigen solver failed to converge.");
     }
 
     return solution;
