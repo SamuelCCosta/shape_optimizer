@@ -1,6 +1,9 @@
 # C++ compiler
 CC = g++
 
+SRC_DIR = src
+OBJ_DIR = objs
+
 GMSH_DIR = /mnt/c/gmsh/gmsh.exe
 
 #pybind
@@ -20,25 +23,28 @@ CFLAGS = -O3 -march=x86-64-v3 #-fopt-info-vec-optimized
 # CFLAGS := $(CFLAGS) -DNDEBUG
 PROFILE_FLAGS = -pg -g
 
-CFLAGS := $(CFLAGS) -std=c++23 -c -Wshadow -Wall -I . -fPIC
+CFLAGS := $(CFLAGS) -std=c++23 -c -Wshadow -Wall -I . -I $(SRC_DIR) -fPIC
 
 PROFILE_CFLAGS = $(CFLAGS) $(PROFILE_FLAGS)
 
-PROFILE_OBJS = main.p.o ellipse.p.o square_solver.p.o
+PROFILE_OBJS = $(addprefix $(OBJ_DIR)/, main.p.o ellipse.p.o square_solver.p.o)
 PROFILE_REPORT = analysis.txt
 
-OBJS = main.o ellipse.o square_solver.o
+OBJS = $(addprefix $(OBJ_DIR)/, main.o ellipse.o square_solver.o)
 
-PY_OBJS = bindings.o ellipse.o square_solver.o
+PY_OBJS = $(addprefix $(OBJ_DIR)/, bindings.o ellipse.o square_solver.o)
 
-%.o: %.cpp
-	$(CC) $(CFLAGS) $^
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CC) $(CFLAGS) $< -o $@
 
-bindings.o: bindings.cpp
+$(OBJ_DIR)/bindings.o: $(SRC_DIR)/bindings.cpp
+	@mkdir -p $(OBJ_DIR)
 	$(CC) $(CFLAGS) $(PYBIND_INCLUDES) $< -o $@
 
-%.p.o: %.cpp
-	$(CC) $(PROFILE_CFLAGS) -c $^ -o $@
+$(OBJ_DIR)/%.p.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CC) $(PROFILE_CFLAGS) -c $< -o $@
 
 a.out: ${OBJS}
 	$(CC) $^ -lmaniFEM -o a.out 
@@ -61,7 +67,8 @@ run: a.out
 	./$<
 
 clean:
-	rm -f *.o *.p.o *.so a.out.profile a.out test.out gmon.out analysis.txt
+	rm -rf $(OBJ_DIR)
+	rm -f *.so a.out.profile a.out test.out gmon.out analysis.txt
 
 clean_msh:
 	rm -f *.msh
@@ -76,7 +83,7 @@ $(MESH_FILE): a.out
 show_mesh: $(MESH_FILE)
 	$(GMSH_DIR) $(VIEW_OPTIONS) &
 
-test.out: test.o
+test.out: $(OBJ_DIR)/test.o
 	$(CC) $^ -L$(MANIFEM_DIR) -lmaniFEM -o test.out
 
 run_test: test.out

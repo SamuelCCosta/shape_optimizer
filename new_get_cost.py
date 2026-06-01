@@ -31,12 +31,12 @@ if __name__ == '__main__':
         "num_ellipses" : 2
     }
     
-    linear_pen = 8.0
+    linear_pen = 0.0
 
     sqs_params = {k: v for k, v in geometric_params.items() if k not in ("num_ellipses")}
     ellipse_bundle_params = {k: geometric_params[k] for k in ["geometric_config", "h", "num_ellipses"]}
 
     state = [0.17192565444874897, 0.2848518988652481, 147.39626194489895, 25.286903310697127, 166.98236756042007, 0.5857396208311669, 0.5182635065978133, 7.566452987234112, 2.3577718294147756, 5.814000668355892]
+    state = []
 
-
-    print(cost_function(sqs_params, ellipse_bundle_params, linear_pen, state).result())
+    print(cost_function(sqs_params, ellipse_bundle_params, linear_pen, state).result()) #type: ignore

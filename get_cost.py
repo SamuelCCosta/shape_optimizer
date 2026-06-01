@@ -17,7 +17,7 @@ params = [0.5, 0.5, AC_param, 0.0, AC_param]
 print(f'{penalization=}')
 
 #h_values = [0.02, 0.018, 0.01, 0.0075, 0.005]
-h_values = [0.02]
+h_values = [0.015]
 
 params = [
   0.8618206759053694,
