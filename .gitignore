@@ -11,3 +11,4 @@ msh/
 refactor/
 __pycache__/
 outline_metric.md
+*.tar.gz
