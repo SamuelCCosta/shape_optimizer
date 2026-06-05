@@ -1,10 +1,10 @@
 # Shape Optimizer Configuration
-optimization_type: SA # can be SA, DSA
+optimization_type: DSA # can be SA, DSA
 combination_type: zip # can be grid (cartesian product), zip
-max_processes: 6
+max_processes: 2
 database_name: experiments.db
-table_name: results # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
-n_runs: 6 # number of trials per configuration
+table_name: results_dsa # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
+n_runs: 2 # number of trials per configuration
 
 geometric_params:
   geometric_config:
@@ -18,7 +18,7 @@ geometric_params:
   num_ellipses: 4
 
 penalizations:
-  linear: 1.5
+  linear: 3.75
 
 kwargs_SA:
   initial_temp: 1000
@@ -31,14 +31,14 @@ kwargs_SA:
 
 kwargs_DSA:
   initial_temp: 1000.0
-  min_temp: 0.01
+  min_temp: 0.001
   cooling_rate_max: 0.99
-  cooling_rate_min: 0.95
-  base_markov_length: 5 # 15 * n_ellipses
+  cooling_rate_min: 0.98
+  base_markov_length: 15 # 15 * n_ellipses
   num_configs: 10 # 10 * (n_ellipses + 1)
-  initial_perturbation: [0.08, 0.08, 4.0, 8.0, 4.0]
-  min_perturbation: [0.04, 0.04, 1.0, 2.0, 1.0]
-  perturbation_update: 0.9
+  initial_perturbation: [0.08, 0.08, 4.0, 6.0, 4.0]
+  min_perturbation: [0.008, 0.008, 0.4, 0.6, 0.4]
+  perturbation_update: 0.995
   min_cost_gap: 0.01
   track_file_name: true
   gen_seed: 0 # 0 = no seed
