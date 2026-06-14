@@ -54,6 +54,8 @@ class SquareSolver {
 
         int n_segments(double l){ return std::ceil(l/h); }
 
+        int n_segments(double l, double size){ return std::ceil(l/size); }
+
         std::vector<Eigen::Vector2d> get_delaunay_grid(EllipseBundle &bundle);
 };
 

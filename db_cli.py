@@ -28,7 +28,7 @@ def analyze_results(db_path, table_name, plot=False):
         print(f"{'Run ID':<8} | {'Total Cost':<12} | {'Penalization':<12} | {'Raw Cost':<12} | {'Area % Remaining':<18}")
         print("-" * 75)
 
-        penalties, areas = [], []
+        best_per_penalty = {}
         n_runs = 0
         
         for row in rows:
@@ -55,19 +55,23 @@ def analyze_results(db_path, table_name, plot=False):
             print(f"{run_id:<8} | {total_cost:<12.6f} | {penalty_factor:<12.2f} | {raw_cost:<12.10f} | {f'{area_percent*100:.4f}%':<18}")
 
             if plot:
-                penalties.append(penalty_factor)
-                areas.append(area_percent)
+                if penalty_factor not in best_per_penalty or total_cost < best_per_penalty[penalty_factor][0]:
+                    best_per_penalty[penalty_factor] = (total_cost, area_percent)
         
         print("-" * 75)
         print(f'Total runs: {n_runs}')
 
         if plot:
+            sorted_penalties = sorted(best_per_penalty.keys())
+            areas = [best_per_penalty[p][1] for p in sorted_penalties]
+
             plt.figure(figsize=(10, 6))
-            plt.plot(penalties, areas, marker='o', linestyle='-')
+            plt.plot(sorted_penalties, areas, marker='o', linestyle='-')
             plt.xlabel('Penalty Factor')
             plt.ylabel('Area % Remaining')
             plt.title(f'Penalty Factor vs Area % Remaining ({table_name})')
             plt.grid(True, which="both", ls="-", alpha=0.5)
+            plt.ylim(0, 1)
             plt.show()
     except sqlite3.OperationalError as e:
         print(f"Error accessing database: {e}")

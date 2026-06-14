@@ -1,5 +1,6 @@
 #include "square_solver.h"
 #include <delaunator.hpp>
+#include <cstdint>
 
 SquareSolver::SquareSolver(std::map<std::string, double> &geometric_config,
     const double h_param,
@@ -26,18 +27,26 @@ SquareSolver::SquareSolver(std::map<std::string, double> &geometric_config,
     double &midW_l = MW_x;
     double midE_l = x_max - ME_x;
 
+    const double sq3_over_2 = std::sqrt(3.0)/2; //constexpr only in C++26
+
     const Mesh MNE = Mesh::Build(tag::grid).shape(tag::segment).start_at(NE).stop_at(ME)
                                                             .divided_in(n_segments(midE_l));
     const Mesh north_middle = Mesh::Build(tag::grid).shape(tag::segment).start_at(ME).stop_at(MW)
                                                             .divided_in(n_segments(mid_l));
     const Mesh NWM = Mesh::Build(tag::grid).shape(tag::segment).start_at(MW).stop_at(NW)
                                                             .divided_in(n_segments(midW_l));
+    
+    int n_vert_divisions = n_segments(y_max, h * sq3_over_2);
+    if (n_vert_divisions % 2 != 0) {
+        n_vert_divisions++;
+    }
+
     const Mesh west = Mesh::Build(tag::grid).shape(tag::segment).start_at(NW).stop_at(SW)
-                                                            .divided_in(n_segments(y_max));
+                                                            .divided_in(n_vert_divisions);
     south = Mesh::Build(tag::grid).shape(tag::segment).start_at(SW).stop_at(SE)
                                                             .divided_in(n_segments(x_max));
     const Mesh east = Mesh::Build(tag::grid).shape(tag::segment).start_at(SE).stop_at(NE)
-                                                            .divided_in(n_segments(y_max));
+                                                            .divided_in(n_vert_divisions);
     
     //podemos ignorar na construção das condições
     const Mesh null_neumann = Mesh::Build(tag::join).meshes({east, west, north_middle});
@@ -169,7 +178,7 @@ double SquareSolver::solve(EllipseBundle &bundle) {
     for (auto &point : delaunay_grid) {
         delaunay_coords.push_back(point.x());
         delaunay_coords.push_back(point.y());
-        Cell A(tag::vertex, tag::of_coords, {point.x(), point.y()});
+        Cell A(tag::vertex, tag::of_coordinates, {point.x(), point.y()});
         numbering[A] = counter;
         cells.push_back(A);
         counter++;
@@ -184,7 +193,6 @@ double SquareSolver::solve(EllipseBundle &bundle) {
 
     std::map<std::pair<int,int>, Cell> segments;
     auto cell_id = [numbering](Cell A) { return numbering.at(A);};
-
 
     auto insert_segment = [cell_id, &segments](Cell seg) {
         Cell A = seg.base().reverse(), B = seg.tip();
@@ -213,9 +221,25 @@ double SquareSolver::solve(EllipseBundle &bundle) {
     Mesh::Iterator it = boundary.iterator(tag::over_segments);
     for (it.reset(); it.in_range(); it++) { insert_segment(*it); }
     }
+
+    // Add a microscopic jitter to the coordinates to break grid degeneracies.
+    // Floating point arithmetic fails on perfectly collinear/cocircular grid points.
+    // We apply this only to the internal grid points, leaving boundary points untouched.
+    std::vector<double> triangulate_coords = delaunay_coords;
+    const double jitter_scale = h * 1e-7;
+    size_t num_boundary_coords = 2 * boundary.number_of(tag::vertices);
+    
+    // Fast Linear Congruential Generator (LCG) for pseudo-random jitter
+    uint32_t rand_state = 123456789;
+    for (size_t i = num_boundary_coords; i < triangulate_coords.size(); i++) {
+        rand_state = 1664525 * rand_state + 1013904223;
+        double noise = (static_cast<double>(rand_state) / 2147483648.0) - 1.0; // Range: [-1.0, 1.0)
+        triangulate_coords[i] += jitter_scale * noise;
+    }
+
     // Delaunay triangulation
-    delaunator::Delaunator delaunay(delaunay_coords);
-    std::vector<std::size_t> triangles = delaunay.triangles;
+    delaunator::Delaunator delaunay(triangulate_coords);
+    std::vector<size_t> triangles = delaunay.triangles;
     
     if (DELAUNAY_SOLVER_VERBOSITY) {
         std::cout << "number of triangles before filtering: " << triangles.size() / 3 << std::endl;
@@ -223,9 +247,13 @@ double SquareSolver::solve(EllipseBundle &bundle) {
 
     // build final mesh
     Mesh domain(tag::fuzzy, tag::of_dim, 2);
-    const double max_edge_sq = 16.0 * h * h; // 4 * h maximum edge length
+    constexpr double max_mult_edge = 3.0 * 3.0;
+    const double max_edge_sq = max_mult_edge * h * h;
     
+    std::vector<bool> node_used(cells.size(), false);
+
     for (size_t i = 0; i < triangles.size(); i += 3) {
+        constexpr bool FILTER_TRIANGLES = true;
         // Delaunator outputs triangles in clockwise order for a Y-up coordinate system.
         // maniFEM expects counter-clockwise order for positive triangles, so we swap id1 and id2.
         size_t id0 = triangles[i], id1 = triangles[i+2], id2 = triangles[i+1];
@@ -233,13 +261,15 @@ double SquareSolver::solve(EllipseBundle &bundle) {
         // Edge length check to prevent giant triangles spanning across the domain
         auto segment_too_big = [&delaunay_coords, max_edge_sq] (size_t _i, size_t _j) {
             double dx01 = delaunay_coords[2*_i] - delaunay_coords[2*_j];
-            double dy01 = delaunay_coords[2*_j+1] - delaunay_coords[2*_j+1];
+            double dy01 = delaunay_coords[2*_i+1] - delaunay_coords[2*_j+1];
             return dx01*dx01 + dy01*dy01 > max_edge_sq;
         };
 
-        if (segment_too_big(id0, id1)) {continue;}
-        if (segment_too_big(id1, id2)) {continue;}
-        if (segment_too_big(id2, id0)) {continue;}
+        if (FILTER_TRIANGLES){
+            if (segment_too_big(id0, id1)) {continue;}
+            if (segment_too_big(id1, id2)) {continue;}
+            if (segment_too_big(id2, id0)) {continue;}
+        }
 
         // Barycenter check to remove triangles inside the holes (ellipses)
         double bary_x = (delaunay_coords[2*id0] + delaunay_coords[2*id1] + delaunay_coords[2*id2]) / 3.0;
@@ -253,7 +283,11 @@ double SquareSolver::solve(EllipseBundle &bundle) {
                 break;
             }
         }
-        if (inside_hole) {continue;}
+        if (FILTER_TRIANGLES && inside_hole) {continue;}
+
+        node_used[id0] = true;
+        node_used[id1] = true;
+        node_used[id2] = true;
 
         Cell triangle(tag::triangle, get_segment(cells[id0], cells[id1]), 
                                      get_segment(cells[id1], cells[id2]), 
@@ -264,6 +298,12 @@ double SquareSolver::solve(EllipseBundle &bundle) {
 
     if (DELAUNAY_SOLVER_VERBOSITY) {
         std::cout << "number of triangles after filtering: " << domain.number_of(tag::cells_of_max_dim) << std::endl;
+        
+        size_t orphaned_count = 0;
+        for (bool used : node_used) {
+            if (!used) { orphaned_count++; }
+        }
+        std::cout << "number of orphaned nodes: " << orphaned_count << std::endl;
     }
     
     //barycentric smoothening
@@ -363,24 +403,31 @@ std::vector<Eigen::Vector2d> SquareSolver::get_delaunay_grid(EllipseBundle &bund
     }
 
     const double sq3_over_2 = std::sqrt(3.0)/2; //constexpr only in C++26
-    int n_vertical_divisions =  static_cast<int>(std::round(x_max / h * sq3_over_2));
+    int n_vertical_divisions =  static_cast<int>(std::ceil(y_max / (h * sq3_over_2))); //aqui era round, no n_segments é ceil
+    if (n_vertical_divisions % 2 != 0) {
+        n_vertical_divisions++;
+    }
     double dy = y_max / n_vertical_divisions;
+
+    int j_max = n_segments(x_max);
+    double dx = x_max / j_max;
+
     // i = 1, ..., n_vert_divs - 1
     for (int i = n_vertical_divisions - 1; i > 0; i--) {
         double y = i * dy;
-        double offset = (i % 2) * h/2;
-        int j_max = static_cast<int>(std::round( (x_max - offset) / h ));
-
-        for (int j = 1; j < j_max; j++){
-            double x = offset + j * h;
+        double offset = (i % 2) * dx / 2.0;
+        for (int j = 1 - (i % 2); j < j_max - (i % 2); j++) {
+            double x = offset + j * dx;
             Eigen::Vector2d point(x, y);
             bool is_outside_all = true;
             int k = 0;
             for (const auto &ellipse : bundle.bundle) {
                 double delta = deltas[k];
-                // in the worst case (ecc = 0.93), a point can be excluded at approx 2.72*threshold (depends on eccentricity, with the formula 1/sqrt(1-ecc^2))
+                // in the worst case (ecc = 0.93), a point can be excluded at approx 2.72*threshold 
+                // (depends on eccentricity, with the formula 1/sqrt(1-ecc^2))
                 if (ellipse.evaluate_at(point) < 1.0 + delta) { //slightly bigger to exclude points close to boundary
                     is_outside_all = false;
+                    // std::cout << "Point rejected: " << point << "\n";
                     break;
                 }
                 k++;

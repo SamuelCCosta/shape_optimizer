@@ -5,7 +5,7 @@
 using namespace maniFEM;
 
 void objective_ellipses(){
-    const double h = 0.0125;
+    const double h = 0.02;
     std::cout << "h: " << h << std::endl;
     const double heat_source = 10.0; //condição neumann fronteira superior
     const double base_temp = 0.0; //condição dirichlet na base
@@ -20,8 +20,8 @@ void objective_ellipses(){
 
     EllipseBundle bundle(geometric_info, h, num_ellipses);
     
-    const int seed = 42;
-    bundle.generate_random(seed);
+    // const int seed = 60;
+    // bundle.generate_random(seed);
 
     const double pen = 0.0;
     double area_percent = 1-bundle.area();
