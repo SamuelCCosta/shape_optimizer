@@ -13,6 +13,7 @@ def create_bundle():
         "db_utils.py",
         "watch_optimization.py",
         "configuration.yaml",
+        "configuration-jasminum.yaml"
         "requirements.txt",
         "setup_venv.sh"
     ]

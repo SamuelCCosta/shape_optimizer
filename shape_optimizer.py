@@ -35,12 +35,18 @@ def shape_optimizer(config_file : str):
         case 'zip':
             combinations = build_zip_combinations(config['geometric_params'], config['penalizations'], kwargs_optimization)
             combinations = [copy.deepcopy(c) for _ in range(n_runs) for c in combinations]
+        case 'lhs':
+            n_samples = config.get('n_lhs_samples', 10)
+            combinations = build_lhs_combinations(config['geometric_params'], config['penalizations'], kwargs_optimization, num_samples=n_samples)
+            combinations = [copy.deepcopy(c) for _ in range(n_runs) for c in combinations]
         case _:
             raise ValueError("Invalid combination type")
-        
+    
     db_path = config['database_name']
     table_name = config['table_name']
-    if isinstance(table_name, (bool, type(None))): #Dynamic table naming
+
+    # Dynamic table naming
+    if isinstance(table_name, (bool, type(None))):
         x_max, y_max = config['geometric_params']['geometric_config']['x_max'], config['geometric_params']['geometric_config']['y_max']
         n_ellipses = config['geometric_params']['num_ellipses']
         linear_penalization = config['penalizations']['linear']

@@ -218,7 +218,6 @@ void EllipseBundle::generate_random(unsigned int seed, size_t max_attempts) {
         gen.seed(rd());
     }
 
-    // Ranges based on typical values for your geometric configuration
     std::uniform_real_distribution<> dist_x(h, x_max - h);
     std::uniform_real_distribution<> dist_y(h, y_max - h);
     // TODO: change how those work depend on domain
@@ -244,5 +243,29 @@ void EllipseBundle::generate_random(unsigned int seed, size_t max_attempts) {
     if (bundle.size() < num_ellipses) {
         std::cerr << "Warning: Reached max attempts (" << max_attempts 
                   << ") before placing all ellipses. Total: " << bundle.size() << "\n";
+    }
+}
+
+void EllipseBundle::fill() {
+    // fills with vertical ellipses
+    // all of them are 1.5 * h away from each other, as well as the outer boundary
+    double small_axis = (x_max - 2 * h) / (num_ellipses * 2) - 0.75 * h;
+    assert(small_axis > 0);
+    double target_large_axis = y_max / 2 - 1.5 * h;
+
+    // due to eccentricity cosntraints, we need to cap the larger axis
+    double max_large_axis = 2.7206 * small_axis;
+    double large_axis = std::min(target_large_axis, max_large_axis);
+    double A = 1. / (small_axis * small_axis);
+    double C = 1. / (large_axis * large_axis);
+
+    // double eccentricity = std::sqrt(1.0 - (C / A));
+    // std::cout << "eccentricity: " << eccentricity << std::endl;
+
+    double x_center_start = x_max / (num_ellipses * 2) + h;
+    double step = (x_max - 2 * h) / num_ellipses;
+    for (size_t i = 0; i < num_ellipses; i++) {
+        double x_center = x_center_start + i * step;
+        this->add(Ellipse(x_center, 0.5, A, 0.0, C));
     }
 }

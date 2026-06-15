@@ -137,5 +137,5 @@ if __name__ == '__main__':
     h = 0.0125
     num_ellipses = 4
     N = 250
-    seed = 967234
+    seed = 123654
     test_generation_runtimes(N, geometric_info, h, num_ellipses, seed=seed)

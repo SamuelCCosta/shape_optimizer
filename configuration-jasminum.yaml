@@ -1,11 +1,11 @@
 # Shape Optimizer Configuration
 optimization_type: SA # can be SA, DSA
 combination_type: lhs # can be grid (cartesian product), zip, lhs
-n_lhs_samples: 15 # default = 10
-max_processes: 2
-database_name: experiments.db
-table_name: test_new_delaunay # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
-n_runs: 2 # number of trials per configuration
+n_lhs_samples: 30 # default = 10
+max_processes: 6
+database_name: remote-jasminum.db
+table_name: parameter_tests # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
+n_runs: 3 # number of trials per configuration
 
 geometric_params:
   geometric_config:
@@ -22,21 +22,20 @@ penalizations:
   linear: 15.0
 
 kwargs_SA:
-  initial_temp: 1000
-  min_temp: 0.001
-  cooling_rate: 0.995
-  perturbation: [0.06, 0.06, 3.0, 1.0, 3.0]
+  initial_temp: [500, 750, 1000, 2000, 10000]
+  min_temp: [0.1, 0.005, 0.001, 0.0005, 0.0001]
+  cooling_rate: [0.97, 0.98, 0.99, 0.995, 0.999] 
+  perturbation: [0.07, 0.07, 5.0, 2.0, 5.0]
   track_file_name: true
   gen_seed: 0 # 0 = no seed
-
 
 kwargs_DSA:
   initial_temp: 1000.0
   min_temp: 0.001
   cooling_rate_max: 0.99
   cooling_rate_min: 0.98
-  base_markov_length: 15 # 15 * n_ellipses
-  num_configs: 10 # 10 * (n_ellipses + 1)
+  base_markov_length: 15
+  num_configs: 10
   initial_perturbation: [0.08, 0.08, 4.0, 6.0, 4.0]
   min_perturbation: [0.008, 0.008, 0.4, 0.6, 0.4]
   perturbation_update: 0.995

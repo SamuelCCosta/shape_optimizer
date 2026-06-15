@@ -5,7 +5,7 @@
 using namespace maniFEM;
 
 void objective_ellipses(){
-    const double h = 0.02;
+    const double h = 0.001;
     std::cout << "h: " << h << std::endl;
     const double heat_source = 10.0; //condição neumann fronteira superior
     const double base_temp = 0.0; //condição dirichlet na base
@@ -20,11 +20,12 @@ void objective_ellipses(){
 
     EllipseBundle bundle(geometric_info, h, num_ellipses);
     
-    // const int seed = 60;
-    // bundle.generate_random(seed);
+    //bundle.generate_random(1234);
 
     const double pen = 0.0;
     double area_percent = 1-bundle.area();
+    bool print_area = true;
+    if (print_area) { std::cout << "Total area: " << area_percent << std::endl; }
     double final_pen = pen * area_percent;
 
     double final_result = sqs.solve(bundle);
@@ -33,6 +34,9 @@ void objective_ellipses(){
     if (pen != 0.0) {
         std::cout << "Penalization: " << final_pen << std::endl;
         std::cout << "Penalized: " << final_result + final_pen << std::endl;
+    }
+    if (area_percent == 1.0) { 
+        std::cout << "Diff between real and calculated: " << 3.9174195203606 - final_result << std::endl;
     }
 }
 

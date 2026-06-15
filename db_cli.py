@@ -6,11 +6,16 @@ import argparse
 import sys
 import re
 from datetime import datetime
+import multiprocessing as mp
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse as MplEllipse
+from pebble import ProcessPool, ProcessExpired
+from concurrent.futures import TimeoutError
+
+spawn_ctx = mp.get_context('spawn')
 
 # =============================================================================
 # 1. AREA & PENALTY ANALYSIS
@@ -22,7 +27,7 @@ def analyze_results(db_path, table_name, plot=False):
     cursor = conn.cursor()
 
     try:
-        cursor.execute(f"SELECT run_id, best_param, best_cost, linear_penalization, x_max, y_max, best_param, initial_params FROM {table_name} ORDER BY linear_penalization ASC")
+        cursor.execute(f"SELECT run_id, best_param, best_cost, linear_penalization, x_max, y_max, best_param, initial_params FROM {table_name} ORDER BY linear_penalization ASC, best_cost ASC")
         rows = cursor.fetchall()
 
         print(f"{'Run ID':<8} | {'Total Cost':<12} | {'Penalization':<12} | {'Raw Cost':<12} | {'Area % Remaining':<18}")
@@ -82,14 +87,14 @@ def calculate_ellipse_areas_from_db(db_path, table_name):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     try:
-        query = f"SELECT run_id, best_param, x_max, y_max, linear_penalization FROM {table_name} WHERE best_param IS NOT NULL ORDER BY linear_penalization ASC, run_id ASC"
+        query = f"SELECT run_id, best_param, x_max, y_max, linear_penalization, best_cost FROM {table_name} WHERE best_param IS NOT NULL ORDER BY linear_penalization ASC, best_cost ASC"
         cursor.execute(query)
         rows = cursor.fetchall()
         
         print(f"{'Run ID':<10} | {'Penalization':<15} | {'Total Ellipses Area':<20} | {'Unfilled Area %':<15}")
         print("-" * 72)
         
-        for run_id, best_param_json, x_max, y_max, linear_penalization in rows:
+        for run_id, best_param_json, x_max, y_max, linear_penalization, best_cost in rows:
             try:
                 best_param = json.loads(best_param_json)
             except json.JSONDecodeError:
@@ -124,7 +129,7 @@ def plot_domains(db_path, table_name):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
-        cursor.execute(f"SELECT run_id, best_param, x_max, y_max, linear_penalization FROM {table_name} ORDER BY linear_penalization ASC")
+        cursor.execute(f"SELECT run_id, best_param, x_max, y_max, linear_penalization FROM {table_name} ORDER BY linear_penalization ASC, best_cost ASC")
         rows = cursor.fetchall()
 
         fig, axes = plt.subplots(4, 4, figsize=(10, 10))
@@ -343,7 +348,7 @@ def print_solution_improvements(db_path, table_name):
         print(f"Error: Required columns not found in '{table_name}'.")
         return
 
-    cursor.execute(f"SELECT run_id, track_file_name, best_cost FROM {table_name}")
+    cursor.execute(f"SELECT run_id, track_file_name, best_cost FROM {table_name} ORDER BY best_cost ASC")
     rows = cursor.fetchall()
     conn.close()
 
@@ -360,6 +365,122 @@ def print_solution_improvements(db_path, table_name):
             print(f"{run_id:8} | {initial_cost:15.4f} | {best_cost:15.4f} | {improvement_pct:17.2f}%")
         except Exception:
             print(f"{run_id:8} | {'Error':>15} | {best_str} | {'N/A':>18}")
+
+# =============================================================================
+# 3.5. RECOMPUTE COST
+# =============================================================================
+
+def _recompute_worker(geometric_info, h, heat_sources, base_temp, num_ellipses, best_param):
+    from square_solver import SquareSolver, EllipseBundle, Ellipse
+    import time
+    
+    sqs = SquareSolver(geometric_info, h, heat_sources, base_temp)
+    ellipses = EllipseBundle(geometric_info, h, num_ellipses)
+    
+    for i in range(num_ellipses):
+        idx = i * 5
+        if idx + 4 < len(best_param):
+            ellipses.add(Ellipse(
+                best_param[idx], best_param[idx+1], best_param[idx+2], best_param[idx+3], best_param[idx+4]
+            ))
+            
+    big_area = geometric_info['x_max'] * geometric_info['y_max']
+    percent_area = (big_area - ellipses.area()) / big_area
+    
+    start_time = time.perf_counter()
+    raw_objective = sqs.solve(ellipses)
+    elapsed = time.perf_counter() - start_time
+    
+    return raw_objective, percent_area, elapsed
+
+def recompute_cost_from_scratch(db_path, table_name, run_id):
+    """
+    Recomputes the PDE solve from scratch for the best_param of a given run_id.
+    Useful for verifying if the recorded best cost matches a reproducible evaluation.
+    """
+    try:
+        from square_solver import SquareSolver, EllipseBundle, Ellipse
+    except ImportError:
+        print("Error: Could not import square_solver. Ensure the C++ pybind module is compiled and accessible.")
+        return
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(f"SELECT * FROM {table_name} WHERE run_id = ?", (run_id,))
+        row = cursor.fetchone()
+    except sqlite3.OperationalError as e:
+        print(f"Database error: {e}")
+        conn.close()
+        return
+        
+    conn.close()
+
+    if not row:
+        print(f"Run ID {run_id} not found in table '{table_name}'.")
+        return
+        
+    if not row['best_param']:
+        print(f"Run ID {run_id} has no best_param.")
+        return
+        
+    try:
+        best_param = json.loads(row['best_param'])
+    except json.JSONDecodeError:
+        print(f"Invalid JSON format in best_param for Run ID {run_id}.")
+        return
+        
+    keys = row.keys()
+    
+    # Recover geometric properties (with fallbacks if missing from DB schema)
+    geometric_info = {
+        'x_max': float(row['x_max']) if 'x_max' in keys else 1.0,
+        'y_max': float(row['y_max']) if 'y_max' in keys else 1.0,
+        'MW_x': float(row['MW_x']) if 'MW_x' in keys else 0.3,
+        'ME_x': float(row['ME_x']) if 'ME_x' in keys else 0.7
+    }
+    
+    h = float(row['h']) if 'h' in keys else 0.02
+    heat_sources = float(row['heat_sources']) if 'heat_sources' in keys else 10.0
+    base_temp = float(row['base_temp']) if 'base_temp' in keys else 0.0
+    num_ellipses = int(row['num_ellipses']) if 'num_ellipses' in keys else len(best_param) // 5
+    penalization = float(row['linear_penalization']) if 'linear_penalization' in keys else 0.0
+    stored_cost = float(row['best_cost']) if 'best_cost' in keys and row['best_cost'] is not None else None
+
+    print(f"Recomputing cost for Run ID {run_id} (h={h}, penalty={penalization})...")
+    
+    try:
+        with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
+            future = pool.schedule(
+                _recompute_worker,
+                args=(geometric_info, h, heat_sources, base_temp, num_ellipses, best_param), # type: ignore
+                timeout=3.0
+            )
+            raw_objective, percent_area, elapsed = future.result()
+        
+        total_cost = raw_objective + (percent_area * penalization)
+        
+        print("-" * 50)
+        print(f"Raw PDE Objective:    {raw_objective:.6f}")
+        print(f"Unfilled Area %:      {percent_area * 100:.4f}%")
+        print(f"Compute Time:         {elapsed:.4f} s")
+        print("-" * 50)
+        if stored_cost is not None:
+            print(f"Stored Best Cost:     {stored_cost:.6f}")
+        print(f"Recomputed Cost:      {total_cost:.6f}")
+        
+        if stored_cost is not None:
+            diff = abs(stored_cost - total_cost)
+            print(f"Difference:           {diff:.6e}")
+            
+    except TimeoutError:
+        print("Failed during recomputation: Solver timed out.")
+    except ProcessExpired:
+        print("Failed during recomputation: Solver crashed (ProcessExpired).")
+    except Exception as e:
+        print(f"Failed during recomputation: {e}")
 
 # =============================================================================
 # 4. WATCH OPTIMIZATION
@@ -466,6 +587,7 @@ def interactive_mode():
                 ("Compare initial vs. best ellipses", "compare-params"),
                 ("Plot cost tracking history", "cost-history"),
                 ("Print table of cost improvements", "improvements"),
+                ("Recompute cost from scratch for a run", "recompute-cost"),
                 ("Continuously monitor active optimizations", "watch"),
                 ("Change table or database", "back"),
                 ("Quit", "exit")
@@ -504,6 +626,10 @@ def interactive_mode():
                         plot_cost_history(db_path, table, parsed_run_ids, penalty=penalty)
                     case "improvements":
                         print_solution_improvements(db_path, table)
+                    case "recompute-cost":
+                        run_id = input("Enter Run ID: ").strip()
+                        if run_id.isdigit(): recompute_cost_from_scratch(db_path, table, int(run_id))
+                        else: print("Invalid Run ID.")
                     case "watch":
                         refresh = float(input("Refresh rate in seconds [2.0]: ").strip() or 2.0)
                         max_age = int(input("Max age in minutes [10]: ").strip() or 10)
@@ -556,6 +682,11 @@ def main():
     # Improvements
     p_improv = subparsers.add_parser("improvements", help="Print table of cost improvements")
     p_improv.add_argument("table", type=str, help="Table name")
+    
+    # Recompute
+    p_recompute = subparsers.add_parser("recompute-cost", help="Recompute cost from scratch for a run")
+    p_recompute.add_argument("table", type=str, help="Table name")
+    p_recompute.add_argument("run_id", type=int, help="Run ID to recompute")
 
     # Watch
     p_watch = subparsers.add_parser("watch", help="Continuously monitor active optimizations")
@@ -581,6 +712,8 @@ def main():
                 print(f"Error: {e}")
         case "improvements":
             print_solution_improvements(args.db, args.table)
+        case "recompute-cost":
+            recompute_cost_from_scratch(args.db, args.table, args.run_id)
         case "watch":
             watch(args.db, args.refresh, args.max_age)
 

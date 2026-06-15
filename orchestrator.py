@@ -287,6 +287,36 @@ def build_zip_combinations(geometric_params, penalizations, kwargs_optimization)
         
     return combinations
 
+def build_lhs_combinations(geometric_params, penalizations, kwargs_optimization, num_samples):
+    config_bundle = {
+        'geometric_params': geometric_params,
+        'penalizations': penalizations,
+        'kwargs_optimization': kwargs_optimization
+    }
+    paths, sweep_lists = _traverse_and_find_lists(config_bundle)
+    
+    if not sweep_lists:
+        return [config_bundle]
+        
+    lhs_lists = []
+    for lst in sweep_lists:
+        # Create a stratified sample of indices covering the list evenly
+        indices = [int(i * len(lst) / num_samples) for i in range(num_samples)]
+        random.shuffle(indices)
+        lhs_lists.append([lst[i] for i in indices])
+        
+    combinations = []
+    for combo in zip(*lhs_lists):
+        new_bundle = copy.deepcopy(config_bundle)
+        for path, val in zip(paths, combo):
+            target = new_bundle
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = val
+        combinations.append(new_bundle)
+        
+    return combinations
+
 def run_experiments(worker_target, combinations, extra_worker_args=(),
                     db_path='experiments.db', table_name='results', max_processes=10):
         
@@ -368,121 +398,6 @@ def run_experiments(worker_target, combinations, extra_worker_args=(),
     db_writer.join()
     print('Done')
 
-
-if __name__ == '__main__':
-    geometric_params = {
-        "geometric_config" : {'x_max': 1.0, 'y_max': 1.0, 'MW_x': 0.3, 'ME_x': 0.7},
-        "h" : 0.02,
-        "heat_sources" : 10.0,
-        "base_temp" : 0.0,
-        "num_ellipses" : 2
-    }
-    
-    penalizations ={
-        'linear' : 16.0
-    }
-
-    kwargs_SA = {
-        'initial_temp' : [1000] * 10,
-        'min_temp' : 0.0001,
-        'cooling_rate' : 0.995,
-        'track_file_name' : True,
-        'gen_seed' : 0, # 0 = no seed 
-        'perturbation' : (0.08, 0.08, 4.0, 8.0, 4.0) # SA perturbation
-    }
-
-    kwargs_DSA = {
-        'initial_temp' : 100.0, 'min_temp' : 0.01,
-        'cooling_rate_max' : 0.99, 'cooling_rate_min' : 0.95,
-        'base_markov_length' : 25, 'num_configs' : 50,
-        'initial_perturbation' : (0.08, 0.08, 4.0, 8.0, 4.0), 'min_perturbation' : (0.01, 0.01, 0.5, 1.0, 0.5),
-        'perturbation_update': 0.99,
-        'min_cost_gap' : 0.01, 'track_file_name' : None,
-        'gen_seed' : 0 # 0 = no seed
-    }
-    
-    optimization_type = 'SA'
-    max_processes = 10
-    database_name = 'experiments.db'
-    table_name = 'x1y1n2lambda16_SA'
-    n_runs = 0 # NOT IMPLEMENTED YET
-
-    if optimization_type == 'SA':
-        combinations = build_grid_combinations(geometric_params, penalizations, kwargs_SA)
-        run_experiments(optimization_worker_SA, combinations, extra_worker_args=(),
-                    db_path = database_name, table_name = table_name, max_processes = max_processes)
-    elif optimization_type == 'DSA':
-        combinations = build_grid_combinations(geometric_params, penalizations, kwargs_DSA)
-        run_experiments(optimization_worker_DSA, combinations, extra_worker_args=(),
-                    db_path = database_name, table_name = table_name, max_processes = max_processes)
-    else:
-        raise ValueError("Invalid optimization type")
-    
-
-    '''
-    Geometric info (constant in every optimization) : geometric_params
-    Penalization info : penalizations
-    Any SA/DSA info : best_params, best_cost, runtime
-    SA specific info : kwargs_SA, initial_params
-    DSA specific info : kwargs_DSA, ... (WIP)
-    '''
-
-
-
-
-
-    
-
-
-if __name__ == '__main__':
-    geometric_params = {
-        "geometric_config" : {'x_max': 1.0, 'y_max': 1.0, 'MW_x': 0.3, 'ME_x': 0.7},
-        "h" : 0.02,
-        "heat_sources" : 10.0,
-        "base_temp" : 0.0,
-        "num_ellipses" : 2
-    }
-    
-    penalizations ={
-        'linear' : 16.0
-    }
-
-    kwargs_SA = {
-        'initial_temp' : [1000] * 10,
-        'min_temp' : 0.0001,
-        'cooling_rate' : 0.995,
-        'track_file_name' : True,
-        'gen_seed' : 0, # 0 = no seed 
-        'perturbation' : (0.08, 0.08, 4.0, 8.0, 4.0) # SA perturbation
-    }
-
-    kwargs_DSA = {
-        'initial_temp' : 100.0, 'min_temp' : 0.01,
-        'cooling_rate_max' : 0.99, 'cooling_rate_min' : 0.95,
-        'base_markov_length' : 25, 'num_configs' : 50,
-        'initial_perturbation' : (0.08, 0.08, 4.0, 8.0, 4.0), 'min_perturbation' : (0.01, 0.01, 0.5, 1.0, 0.5),
-        'perturbation_update': 0.99,
-        'min_cost_gap' : 0.01, 'track_file_name' : None,
-        'gen_seed' : 0 # 0 = no seed
-    }
-    
-    optimization_type = 'SA'
-    max_processes = 10
-    database_name = 'experiments.db'
-    table_name = 'x1y1n2lambda16_SA'
-    n_runs = 0 # NOT IMPLEMENTED YET
-
-    if optimization_type == 'SA':
-        combinations = build_grid_combinations(geometric_params, penalizations, kwargs_SA)
-        run_experiments(optimization_worker_SA, combinations, extra_worker_args=(),
-                    db_path = database_name, table_name = table_name, max_processes = max_processes)
-    elif optimization_type == 'DSA':
-        combinations = build_grid_combinations(geometric_params, penalizations, kwargs_DSA)
-        run_experiments(optimization_worker_DSA, combinations, extra_worker_args=(),
-                    db_path = database_name, table_name = table_name, max_processes = max_processes)
-    else:
-        raise ValueError("Invalid optimization type")
-    
 
     '''
     Geometric info (constant in every optimization) : geometric_params

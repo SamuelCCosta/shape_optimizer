@@ -89,6 +89,10 @@ class EllipseBundle {
             return bundle.empty();
         }
 
+        void clear() {
+            bundle.clear();
+        }
+
         void add(const Ellipse &new_ellipse){
             check_intersections(new_ellipse);
             bundle.push_back(new_ellipse);
@@ -96,6 +100,9 @@ class EllipseBundle {
 
         // Tries to insert random valid configurations until num_ellipses is reached
         void generate_random(unsigned int seed = 0, size_t max_attempts = 10000);
+
+        // Fills with vertical ellipses
+        void fill();
 
         const double area() const {
             double total = 0;
