@@ -30,24 +30,44 @@ class BaseSimulatedAnnealing(ABC):
                 writer = csv.writer(f)
                 writer.writerow(['temp', 'cost', 'accept_prob', 'accepted', 'is_best', 'param'])
 
+    def __getstate__(self):
+        '''Unstucks the optimization process (does not pickle the 'pool')'''
+        state = self.__dict__.copy()
+        if 'pool' in state:
+            del state['pool']
+        return state
+
     @abstractmethod
     def get_neighbour(self, state) -> Any:
         '''Given a state, get a neighbouring state.'''
         pass
 
     @abstractmethod
-    def raw_cost_function(self,state) -> float:
-        '''Get cost, might be infinite, error out or timeout'''
+    def raw_cost_function(self,state) -> tuple[float, bool]:
+        '''Get cost and a boolean indicating if PDE was executed. Might error out or timeout.'''
         pass
+
+    def _close_pool(self):
+        if getattr(self, 'pool', None) is not None:
+            try:
+                self.pool.close()
+                self.pool.join()
+            except Exception:
+                pass
+            self.pool = None
 
     def get_cost(self, state) -> float:
         '''Safely return the cost functional, or infinite if it did not compute'''
+        if getattr(self, 'pool', None) is None:
+            self.pool = ProcessPool(max_workers=1, context=spawn_ctx)
         try:
-            with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
-                future = pool.schedule(self.raw_cost_function, args=[state], timeout=2.0)
-                return future.result() #type: ignore #Pylance is not smart enough to know it returns a Future object
-        except Exception as e:
-            #print(repr(e))
+            future = self.pool.schedule(self.raw_cost_function, args=[state], timeout=60.0)
+            cost, pde_executed = future.result() #type: ignore
+            if pde_executed:
+                self._close_pool()
+            return cost
+        except Exception:
+            self._close_pool()
             return float('inf')
     
     def acceptance_probability(self, old_cost, new_cost):
@@ -71,10 +91,10 @@ class BaseSimulatedAnnealing(ABC):
                 writer.writerow(clean_row)
 
 
-    def run(self, initial_state):
+    def run(self, initial_state, initial_cost=None):
         '''The main optimization loop, using the rules defined in the Class'''
         current_state = initial_state
-        current_cost = self.get_cost(initial_state)
+        current_cost = initial_cost if initial_cost is not None else self.get_cost(initial_state)
         assert(current_cost != float('inf'))
 
         self.best_state = current_state
@@ -110,6 +130,7 @@ class BaseSimulatedAnnealing(ABC):
 
             self.update_temperature()
 
+        self._close_pool()
         return self.best_state, self.best_cost
 
 class DirectSimulatedAnnealing(ABC):
@@ -151,14 +172,20 @@ class DirectSimulatedAnnealing(ABC):
                 writer = csv.writer(f)
                 writer.writerow(['temp', 'effective_cooling', 'current_markov_length', 'perturbation', 'best_cost', 'best_param', 'cost_gap', 'current_params'])
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if 'pool' in state:
+            del state['pool']
+        return state
+
     @abstractmethod
     def get_neighbour(self, state) -> Any:
         '''Given a state, get a neighbouring state.'''
         pass
 
     @abstractmethod
-    def raw_cost_function(self,state) -> float:
-        '''Get cost, might be infinite, error out or timeout'''
+    def raw_cost_function(self,state) -> tuple[float, bool]:
+        '''Get cost and a boolean indicating if PDE was executed. Might error out or timeout.'''
         pass
 
     @abstractmethod
@@ -166,13 +193,27 @@ class DirectSimulatedAnnealing(ABC):
         '''Get starting configuration to start the optimization process'''
         pass
 
+    def _close_pool(self):
+        if getattr(self, 'pool', None) is not None:
+            try:
+                self.pool.close()
+                self.pool.join()
+            except Exception:
+                pass
+            self.pool = None
+
     def get_cost(self, state) -> float:
         '''Safely return the cost functional, or infinite if it did not compute'''
+        if getattr(self, 'pool', None) is None:
+            self.pool = ProcessPool(max_workers=1, context=spawn_ctx)
         try:
-            with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
-                future = pool.schedule(self.raw_cost_function, args=[state], timeout=2.0)
-                return future.result() #type: ignore #Pylance is not smart enough to know it returns a Future object
-        except:
+            future = self.pool.schedule(self.raw_cost_function, args=[state], timeout=60.0)
+            cost, pde_executed = future.result() #type: ignore
+            if pde_executed:
+                self._close_pool()
+            return cost
+        except Exception:
+            self._close_pool()
             return float('inf')
     
     def acceptance_probability(self, old_cost, new_cost):
@@ -288,6 +329,7 @@ class DirectSimulatedAnnealing(ABC):
                 self._log_state(self.temp, self.effective_cooling, self.current_markov_length, 
                                 self.perturbation, self.best_cost(), self.configurations[0][0], self.cost_gap(), self.configurations)
         
+        self._close_pool()
         return self.configurations[0]
 
 
@@ -298,8 +340,8 @@ if __name__ == '__main__':
             super().__init__(**kwargs)
             self.step_size = step_size
 
-        def raw_cost_function(self, state) -> float:
-            return state ** 2
+        def raw_cost_function(self, state) -> tuple[float, bool]:
+            return state ** 2, True
         
         def get_neighbour(self, state):
             size = self.step_size * self.temp / self.initial_temp

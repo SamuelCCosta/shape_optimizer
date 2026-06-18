@@ -36,9 +36,8 @@ class EllipseSA(BaseSimulatedAnnealing):
         self.sqs_params = {k: v for k, v in geometric_params.items() if k not in ("num_ellipses")}
         self.ellipse_bundle_params = {k: geometric_params[k] for k in ["geometric_config", "h", "num_ellipses"]}
 
-    def raw_cost_function(self, state) -> float:
+    def raw_cost_function(self, state) -> tuple[float, bool]:
         '''Get full cost, including (linear) penalization.'''
-        sqs = SquareSolver(**self.sqs_params)
         ellipses = EllipseBundle(**self.ellipse_bundle_params)
         n_param = 5 #ellipse parameter number
         try:
@@ -46,10 +45,15 @@ class EllipseSA(BaseSimulatedAnnealing):
                 idx = i * n_param
                 ellipses.add(Ellipse(state[idx], state[idx + 1], state[idx + 2],
                                     state[idx + 3], state[idx + 4]))
+        except Exception: # fails at conception (invalid configuration)
+            return float('inf'), False
+            
+        try:
+            sqs = SquareSolver(**self.sqs_params)
             area_percent = (self.full_area - ellipses.area()) / self.full_area
-            return sqs.solve(ellipses) + self.linear_penalization * area_percent
-        except: #invalid configuration
-            return float('inf')
+            return sqs.solve(ellipses) + self.linear_penalization * area_percent, True
+        except Exception: # fails in solver
+            return float('inf'), True
     
     def get_neighbour(self, state):
         noise = [random.normalvariate(0.0, 1.0) * p for p in self.perturbation]
@@ -58,7 +62,6 @@ class EllipseSA(BaseSimulatedAnnealing):
     
     def raw_generation_function(self, seed=0):
         '''Generates a random valid configuration, evaluates it, and returns cost & state.'''
-        sqs = SquareSolver(**self.sqs_params)
         ellipses = EllipseBundle(**self.ellipse_bundle_params)
         
         ellipses.generate_random(seed=seed)
@@ -68,9 +71,10 @@ class EllipseSA(BaseSimulatedAnnealing):
             
         state = []
         for e in ellipses.bundle:
-            state.extend([e.center[0], e.center[1], e.quadratic_form[0,0], e.quadratic_form[0,1], e.quadratic_form[1,1]])
+            state.extend([float(e.center[0]), float(e.center[1]), float(e.quadratic_form[0,0]), float(e.quadratic_form[0,1]), float(e.quadratic_form[1,1])])
             
         try:
+            sqs = SquareSolver(**self.sqs_params)
             area_percent = (self.full_area - ellipses.area()) / self.full_area
             cost = sqs.solve(ellipses) + self.linear_penalization * area_percent #OBJECTIVE FUNCTION
             return state, cost
@@ -83,10 +87,11 @@ class EllipseSA(BaseSimulatedAnnealing):
                 current_seed = self.gen_seed + self.generation_attempts if self.gen_seed != 0 else 0
                 self.generation_attempts += 1
                 with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
-                    future = pool.schedule(self.raw_generation_function, args=[current_seed], timeout=2.0)
+                    future = pool.schedule(self.raw_generation_function, args=[current_seed], timeout=60.0)
                     state, cost = future.result() # type: ignore
                     if cost != float('inf'):
                         self.initial_state = state
+                        self.initial_cost = cost
             except Exception:
                 pass # Ignore timeouts and crashes, try again
 
@@ -110,9 +115,8 @@ class EllipseDSA(DirectSimulatedAnnealing):
         self.sqs_params = {k: v for k, v in geometric_params.items() if k not in ("num_ellipses")}
         self.ellipse_bundle_params = {k: geometric_params[k] for k in ["geometric_config", "h", "num_ellipses"]}
     
-    def raw_cost_function(self, state) -> float:
+    def raw_cost_function(self, state) -> tuple[float, bool]:
         '''Get full cost, including (linear) penalization.'''
-        sqs = SquareSolver(**self.sqs_params)
         ellipses = EllipseBundle(**self.ellipse_bundle_params)
         n_param = 5 #ellipse parameter number
         try:
@@ -120,10 +124,15 @@ class EllipseDSA(DirectSimulatedAnnealing):
                 idx = i * n_param
                 ellipses.add(Ellipse(state[idx], state[idx + 1], state[idx + 2],
                                     state[idx + 3], state[idx + 4]))
+        except Exception: # fails at conception (invalid configuration)
+            return float('inf'), False
+            
+        try:
+            sqs = SquareSolver(**self.sqs_params)
             area_percent = (self.full_area - ellipses.area()) / self.full_area
-            return sqs.solve(ellipses) + self.linear_penalization * area_percent #OBJECTIVE FUNCTION
-        except: #invalid configuration
-            return float('inf')
+            return sqs.solve(ellipses) + self.linear_penalization * area_percent, True #OBJECTIVE FUNCTION
+        except Exception: # fails in solver
+            return float('inf'), True
     
     def get_neighbour(self, state):
         noise = [random.normalvariate(0.0, 1.0) * scale for scale in self.perturbation]
@@ -131,7 +140,6 @@ class EllipseDSA(DirectSimulatedAnnealing):
     
     def raw_generation_function(self, seed=0):
         '''Generates a random valid configuration, evaluates it, and returns cost & state.'''
-        sqs = SquareSolver(**self.sqs_params)
         ellipses = EllipseBundle(**self.ellipse_bundle_params)
         
         ellipses.generate_random(seed=seed)
@@ -141,9 +149,10 @@ class EllipseDSA(DirectSimulatedAnnealing):
             
         state = []
         for e in ellipses.bundle:
-            state.extend([e.center[0], e.center[1], e.quadratic_form[0,0], e.quadratic_form[0,1], e.quadratic_form[1,1]])
+            state.extend([float(e.center[0]), float(e.center[1]), float(e.quadratic_form[0,0]), float(e.quadratic_form[0,1]), float(e.quadratic_form[1,1])])
             
         try:
+            sqs = SquareSolver(**self.sqs_params)
             area_percent = (self.full_area - ellipses.area()) / self.full_area
             cost = sqs.solve(ellipses) + self.linear_penalization * area_percent #OBJECTIVE FUNCTION
             return state, cost
@@ -158,7 +167,7 @@ class EllipseDSA(DirectSimulatedAnnealing):
                 current_seed = self.gen_seed + self.generation_attempts if self.gen_seed != 0 else 0
                 self.generation_attempts += 1
                 with ProcessPool(max_workers=1, context=spawn_ctx) as pool:
-                    future = pool.schedule(self.raw_generation_function, args=[current_seed], timeout=2.0)
+                    future = pool.schedule(self.raw_generation_function, args=[current_seed], timeout=60.0)
                     state, cost = future.result() # type: ignore
                     if cost != float('inf') and state is not None:
                         self.initial_configs.append((state, cost))
@@ -179,11 +188,13 @@ def optimization_worker_SA(queue : mp.Queue, run_id: int, geometric_params : dic
     if initial_params == []:
         solver.get_initial_state()
         actual_initial_params = solver.initial_state
+        initial_cost = getattr(solver, 'initial_cost', None)
     else:
         actual_initial_params = initial_params
+        initial_cost = None
     print(actual_initial_params)
     start_time = time.time()
-    best_param, best_cost = solver.run(actual_initial_params)
+    best_param, best_cost = solver.run(actual_initial_params, initial_cost=initial_cost)
     runtime = time.time() - start_time
 
     # Get all the values into the SQL queue

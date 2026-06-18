@@ -15,6 +15,10 @@ def shape_optimizer(config_file : str):
         if "kwargs_" in key:
             for opt_key, opt_val in val.items():
                 if "perturbation" in opt_key and isinstance(opt_val, list):
+                    # If it's a list of lists, convert inner elements to tuples to allow sweeping
+                    if len(opt_val) > 0 and isinstance(opt_val[0], list):
+                        config[key][opt_key] = [tuple(p) for p in opt_val]
+                    else:
                         config[key][opt_key] = tuple(opt_val)
     
     # get appropriate kwargs for the optimization
