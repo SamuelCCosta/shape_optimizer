@@ -81,6 +81,10 @@ class BaseSimulatedAnnealing(ABC):
         self.temp *= self.cooling_rate
         return None
     
+    def stopping_criteria(self):
+        '''Defines the stopping criteria. Defaults to minimum temperature threshold.'''
+        return self.temp > self.min_temp
+    
     def _log_state(self, temp, cost, accept_prob, accepted, is_best, param):
         if self.track_states:
             with open(self.track_file_name, 'a', newline='') as f: #type:ignore
@@ -90,6 +94,9 @@ class BaseSimulatedAnnealing(ABC):
                 clean_row[-1] = json.dumps(clean_row[-1])
                 writer.writerow(clean_row)
 
+    def run_best(self):
+        '''Additional code one might want to add if a given cost is the best one.'''
+        pass
 
     def run(self, initial_state, initial_cost=None):
         '''The main optimization loop, using the rules defined in the Class'''
@@ -102,7 +109,7 @@ class BaseSimulatedAnnealing(ABC):
         if self.track_states:
             self._log_state(self.temp, current_cost, 1.0, True, True, current_state)
 
-        while self.temp > self.min_temp:
+        while self.stopping_criteria():
             neighbour_cost = float('inf')
             neighbour_state = None
             while neighbour_cost == float('inf'):
@@ -124,6 +131,7 @@ class BaseSimulatedAnnealing(ABC):
                 if is_best:
                     self.best_state = current_state
                     self.best_cost = current_cost
+                    self.run_best()
             
             elif self.track_states:
                 self._log_state(self.temp, neighbour_cost, test, False, False, neighbour_state)

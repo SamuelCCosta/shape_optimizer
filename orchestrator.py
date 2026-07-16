@@ -24,6 +24,10 @@ class EllipseSA(BaseSimulatedAnnealing):
         perturbation = list(kwargs.pop('perturbation'))
         self.perturbation = perturbation * self.num_ellipses
         
+        # stopping criteria
+        self.no_improvement = 0
+        self.improvement_threshold = kwargs.pop('improvement_threshold', 50)
+
         super().__init__(**kwargs)
         self.geometric_params = geometric_params
         self.initial_state = []
@@ -94,6 +98,17 @@ class EllipseSA(BaseSimulatedAnnealing):
                         self.initial_cost = cost
             except Exception:
                 pass # Ignore timeouts and crashes, try again
+    
+    def stopping_criteria(self):
+        '''Continue if temp is above min_temp. If temp is low, also check for recent improvements.'''
+        if self.temp <= self.min_temp:
+            return False # Stop if temperature is below the absolute minimum
+        if self.temp < 10 * self.min_temp:
+            return self.no_improvement <= self.improvement_threshold # If temp is low, stop if there are no recent improvements
+        return True # Otherwise, continue
+    
+    def run_best(self):
+        self.no_improvement += 1
 
 
 class EllipseDSA(DirectSimulatedAnnealing):

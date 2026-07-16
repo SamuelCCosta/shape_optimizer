@@ -7,6 +7,7 @@ database_name: remote-jasminum.db #remote-jasminum.db
 table_name: temp_2000_tests # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
 n_runs: 5 # number of trials per configuration
 
+# Problem parameters
 geometric_params:
   geometric_config:
     x_max: 1.0
@@ -21,6 +22,7 @@ geometric_params:
 penalizations:
   linear: 15.0
 
+# Optimization parameters
 kwargs_SA:
   initial_temp: 2000
   min_temp: 0.0001

@@ -284,7 +284,7 @@ def plot_cost_history(db_path, table_name, run_ids, penalty=None, save_path=None
             print(f"Error: Column 'linear_penalization' does not exist in table '{table_name}'.")
             conn.close()
             return
-            
+
         cursor.execute(f"SELECT DISTINCT run_id FROM {table_name} WHERE track_file_name IS NOT NULL AND linear_penalization = ? ORDER BY run_id ASC", (penalty,))
         penalty_runs = [row[0] for row in cursor.fetchall()]
         
@@ -312,12 +312,16 @@ def plot_cost_history(db_path, table_name, run_ids, penalty=None, save_path=None
         if not row or not row[0] or not os.path.exists(row[0]): continue
             
         df = pd.read_csv(row[0])
-        current_costs = df['cost'].where(df['accepted']).ffill() if 'accepted' in df.columns else df['cost']
-        best_costs = current_costs.cummin()
-        iterations = df.index
+        if 'cost' in df.columns: # SA
+            current_costs = df['cost'].where(df['accepted']).ffill()
+        else: # DSA
+            current_costs = df['best_cost']
 
-        p = plt.plot(iterations, best_costs, linewidth=2, label=f'Best Cost (Run {run_id})')
-        plt.plot(iterations, current_costs, color=p[0].get_color(), alpha=0.3, linewidth=1)
+        best_costs = current_costs.cummin()
+        temperatures = df['temp']
+
+        p = plt.plot(temperatures, best_costs, linewidth=2, label=f'Best Cost (Run {run_id})')
+        plt.plot(temperatures, current_costs, color=p[0].get_color(), alpha=0.3, linewidth=1)
 
     conn.close()
     
@@ -327,8 +331,10 @@ def plot_cost_history(db_path, table_name, run_ids, penalty=None, save_path=None
         
     penalty_str = f" (Penalty: {penalty})" if penalty is not None else ""
     plt.title(f"Optimization Cost History (Run IDs: {title_run_str}){penalty_str}")
-    plt.xlabel("Iteration")
+    plt.xlabel("Temperature")
     plt.ylabel("Cost")
+    plt.xscale('log')
+    plt.gca().invert_xaxis()
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.legend()
     plt.tight_layout()

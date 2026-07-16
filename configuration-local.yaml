@@ -7,6 +7,7 @@ database_name: experiments.db
 table_name: test_new_delaunay # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
 n_runs: 2 # number of trials per configuration
 
+# Problem parameters
 geometric_params:
   geometric_config:
     x_max: 1.0
@@ -21,13 +22,15 @@ geometric_params:
 penalizations:
   linear: 15.0
 
+# Optimization parameters
 kwargs_SA:
   initial_temp: 1000
   min_temp: 0.001
   cooling_rate: 0.995
   perturbation: [0.06, 0.06, 3.0, 1.0, 3.0]
   track_file_name: true
-  gen_seed: 0 # 0 = no seed
+  gen_seed: 0 # 0 = no seed*
+  improvement_threshold: 75 # default = 50
 
 
 kwargs_DSA:
