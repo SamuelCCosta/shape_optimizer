@@ -39,7 +39,7 @@ THEORETICAL FOUNDATIONS & TERM EXPLANATIONS:
 Separation of variables on [0, x_max] x [0, y_{max}] yields the solution:
 u(x,y) = A0*y + sum_{n=1}^inf A_n * sinh(n*pi*y/x_max) * cos(n*pi*x/x_max)
 
-Applying the boundary condition u_y(x, y_max) = g(x) via orthogonality, and 
+Applying the boundary condition u_y(x, y_max) = g(x) and 
 integrating u(x, y_max) over Gamma_sources yields J(u).
 
 CODE TERMS:
@@ -48,7 +48,7 @@ CODE TERMS:
   Formula: (10 * y_max / x_max) * (MW_x + x_max - ME_x)^2
 
 - sin_diff: [sin(n*pi*MW_x/x_max) - sin(n*pi*ME_x/x_max)]. Arises from 
-  integrating the spatial harmonic cos(n*pi*x/x_max) over the source intervals.
+  integrating cos(n*pi*x/x_max) over the source intervals.
 
 - tanh_term: tanh(n*pi*y_max/x_max). Represents the aspect ratio effect, 
   originating from the ratio of the field potential (sinh) to its normal flux 
