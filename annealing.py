@@ -106,6 +106,7 @@ class BaseSimulatedAnnealing(ABC):
 
         self.best_state = current_state
         self.best_cost = current_cost
+        self.no_improvement = 0
         if self.track_states:
             self._log_state(self.temp, current_cost, 1.0, True, True, current_state)
 
@@ -119,6 +120,7 @@ class BaseSimulatedAnnealing(ABC):
 
             random_number = random.random()
             test = self.acceptance_probability(current_cost, neighbour_cost)
+            is_best = False
             
             if random_number < test:
                 current_state = neighbour_state
@@ -136,6 +138,7 @@ class BaseSimulatedAnnealing(ABC):
             elif self.track_states:
                 self._log_state(self.temp, neighbour_cost, test, False, False, neighbour_state)
 
+            self.no_improvement = 0 if is_best else self.no_improvement + 1
             self.update_temperature()
 
         self._close_pool()

@@ -176,9 +176,13 @@ double SquareSolver::solve(EllipseBundle &bundle) {
     }
     // at this point, counter = n_vertices_bdry - 1
     for (auto &point : delaunay_grid) {
+        // if (DELAUNAY_SOLVER_VERBOSITY) {std::cout << "Expected point x: " << point.x() << " y: " << point.y() << std::endl;}
         delaunay_coords.push_back(point.x());
         delaunay_coords.push_back(point.y());
-        Cell A(tag::vertex, tag::of_coordinates, {point.x(), point.y()});
+        // Cell A(tag::vertex, tag::of_coordinates, {point.x(), point.y()}); // isto dá valores idiotas às vezes
+        Cell A(tag::vertex);
+        x(A) = point.x(), y(A) =  point.y();
+        // if (DELAUNAY_SOLVER_VERBOSITY) {std::cout << "Point added x: " << x(A) << " y: " << y(A) << std::endl;}
         numbering[A] = counter;
         cells.push_back(A);
         counter++;
@@ -297,6 +301,10 @@ double SquareSolver::solve(EllipseBundle &bundle) {
     }
 
     if (DELAUNAY_SOLVER_VERBOSITY) {
+        // for (const auto p : cells) {
+        //     std::cout << "cell coord x: " << x(p) << " y: " << y(p) << std::endl;
+        // }
+
         std::cout << "number of triangles after filtering: " << domain.number_of(tag::cells_of_max_dim) << std::endl;
         
         size_t orphaned_count = 0;
@@ -390,6 +398,8 @@ double SquareSolver::solve(EllipseBundle &bundle) {
 
 
 std::vector<Eigen::Vector2d> SquareSolver::get_delaunay_grid(EllipseBundle &bundle) {
+    constexpr bool DELAUNAY_GRID_VERBOSITY = false;
+
     std::vector<Eigen::Vector2d> points;
     // delta calculation to reject points too near to the ellipses
     std::vector<double> deltas;
@@ -406,11 +416,15 @@ std::vector<Eigen::Vector2d> SquareSolver::get_delaunay_grid(EllipseBundle &bund
     int n_vertical_divisions =  static_cast<int>(std::ceil(y_max / (h * sq3_over_2))); //aqui era round, no n_segments é ceil
     if (n_vertical_divisions % 2 != 0) {
         n_vertical_divisions++;
-    }
+    } // can be n_vertical_divisions += n_vertical_divisions % 2
     double dy = y_max / n_vertical_divisions;
 
     int j_max = n_segments(x_max);
     double dx = x_max / j_max;
+
+    if (DELAUNAY_GRID_VERBOSITY) {
+        std::cout << "dx: " << dx << " dy: " << dy << std::endl;
+    }
 
     // i = 1, ..., n_vert_divs - 1
     for (int i = n_vertical_divisions - 1; i > 0; i--) {

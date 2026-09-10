@@ -104,13 +104,9 @@ class EllipseSA(BaseSimulatedAnnealing):
         if self.temp <= self.min_temp:
             return False # Stop if temperature is below the absolute minimum
         if self.temp < 10 * self.min_temp:
-            return self.no_improvement <= self.improvement_threshold # If temp is low, stop if there are no recent improvements
+            return self.no_improvement < self.improvement_threshold # If temp is low, stop after this many iterations without a new best
         return True # Otherwise, continue
     
-    def run_best(self):
-        self.no_improvement += 1
-
-
 class EllipseDSA(DirectSimulatedAnnealing):
     '''Direct SA algorithm'''
     def __init__(self, geometric_params : dict, penalizations : dict, **kwargs):
@@ -423,18 +419,3 @@ def run_experiments(worker_target, combinations, extra_worker_args=(),
     queue.put(None)
     db_writer.join()
     print('Done')
-
-
-    '''
-    Geometric info (constant in every optimization) : geometric_params
-    Penalization info : penalizations
-    Any SA/DSA info : best_params, best_cost, runtime
-    SA specific info : kwargs_SA, initial_params
-    DSA specific info : kwargs_DSA, ... (WIP)
-    '''
-
-
-
-
-
-    

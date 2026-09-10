@@ -6,43 +6,20 @@ import time
 #h = 0.02
 heat_source = 10.0
 base_temp = 0.0
-num_ellipses = 0
+num_ellipses = 1
 geometric_info = {'x_max' : 1.0, 'y_max' : 1.0, 'MW_x' : 0.3, 'ME_x' : 0.7}
 big_area = geometric_info['x_max'] * geometric_info['y_max']
 
-penalization = 0.0
-radius = 0.05
-AC_param = (1 / radius) ** 2
-params = [0.5, 0.5, AC_param, 0.0, AC_param]
-print(f'{penalization=}')
+penalization = 8.0
+# radius = 0.05
+# AC_param = (1 / radius) ** 2
+# params = [0.5, 0.5, AC_param, 0.0, AC_param]
+# print(f'{penalization=}')
 
 #h_values = [0.02, 0.018, 0.01, 0.0075, 0.005]
-h_values = [0.015]
-
-params = [
-  0.8618206759053694,
-  0.638244200440503,
-  225.67493248788125,
-  -160.57422243346917,
-  280.5987404955669,
-  0.8379835207017033,
-  0.3939957829236339,
-  192.45436487876822,
-  -21.333606792881376,
-  78.24251380072735,
-  0.15718368156532972,
-  0.11260201636280878,
-  398.10059552791836,
-  -241.77576084751604,
-  451.12919820660574,
-  0.3854623436369899,
-  0.4835325070889105,
-  14.240792213872059,
-  7.025599246051849,
-  8.336150579822723
-]
-params=[]
-
+h_values = [0.02]
+delta = 1e-4
+params = [0.5, 0.5585, 39.0625, 0.0, 5.629]
 
 @concurrent.process(timeout = 30.0)
 def cost(params, h):
@@ -133,11 +110,11 @@ if __name__ == '__main__':
             penalized_cost = objective + (percent_area * penalization)
             
             print(f"{h_test:8.3f} | {elapsed:10.4f} | {objective:12.4f} | {penalized_cost:12.4f}")
-            calculate_gradient = False
+            calculate_gradient = True
             if calculate_gradient:
-                grad = get_gradient(params, h_test)
+                grad = get_gradient(params, h_test, delta)
                 print(f"  -> Forward Gradient: {[round(g, 4) if not np.isnan(g) else 'NaN' for g in grad]}")
-                grad_central = get_gradient_central(params, h_test)
+                grad_central = get_gradient_central(params, h_test, delta)
                 print(f"  -> Central Gradient: {[round(g, 4) if not np.isnan(g) else 'NaN' for g in grad_central]}")
         except Exception as e:
             elapsed = time.perf_counter() - start_time

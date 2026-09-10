@@ -1,0 +1,23 @@
+{
+  "bootstrap_replicates": 5000,
+  "bootstrap_seed": 20260903,
+  "database": "/home/samuel/projects/shape_optimizer/jasminum-remote.db",
+  "database_run_count": 390,
+  "database_sha256": "e1f94d4908e555381df1175908fe624a0d8d77eff0ba84b133960d15e8645eb8",
+  "error_count": 0,
+  "missing_file_count": 0,
+  "primary_target": 0.85,
+  "probability_tolerance": 1e-10,
+  "script_version": "1.0.0",
+  "targets": [
+    0.8,
+    0.85,
+    0.9,
+    0.95,
+    0.99
+  ],
+  "track_root": "/home/samuel/projects/shape_optimizer",
+  "usable_run_count": 390,
+  "warning_count": 0,
+  "window": 100
+}

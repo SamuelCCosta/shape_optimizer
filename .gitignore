@@ -13,3 +13,4 @@ __pycache__/
 outline_metric.md
 *.tar.gz
 domain_mshs/
+ellipse_packing/

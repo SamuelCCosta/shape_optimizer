@@ -124,23 +124,29 @@ def calculate_ellipse_areas_from_db(db_path, table_name):
 # 2. PLOTTING DOMAINS & ELLIPSES
 # =============================================================================
 
-def plot_domains(db_path, table_name):
+def plot_domains(db_path, table_name, penalty=None):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
-        cursor.execute(f"SELECT run_id, best_param, x_max, y_max, linear_penalization FROM {table_name} ORDER BY linear_penalization ASC, best_cost ASC")
+        query = (f"SELECT best_cost, best_param, x_max, y_max, linear_penalization FROM {table_name} "
+                 "WHERE best_param IS NOT NULL AND best_cost IS NOT NULL")
+        query_params = []
+        if penalty is not None:
+            query += " AND linear_penalization = ?"
+            query_params.append(penalty)
+        query += " ORDER BY linear_penalization ASC, best_cost ASC LIMIT 16"
+        cursor.execute(query, query_params)
         rows = cursor.fetchall()
+        if not rows:
+            filter_description = f" with penalization {penalty}" if penalty is not None else ""
+            print(f"No completed solutions to plot in {table_name}{filter_description}.")
+            return
 
         fig, axes = plt.subplots(4, 4, figsize=(10, 10))
         axes = axes.flatten()
-        idx = 0
-        for row in rows:
-            if idx >= len(axes): break
-            if row['x_max'] != 3.0: continue
-            
+        for idx, row in enumerate(rows):
             ax = axes[idx]
-            idx += 1
 
             ax.set_xlim(0.0, row['x_max'])
             ax.set_ylim(0.0, row['y_max'])
@@ -167,9 +173,12 @@ def plot_domains(db_path, table_name):
                 ax.add_patch(ellipse_patch)
                 ax.plot(xc, yc, 'k+', markersize=5)
 
-            ax.set_title(f"Run {row['run_id']} - Pen: {row['linear_penalization']}")
+            ax.set_title(f"Cost: {row['best_cost']:.3f} - Pen: {row['linear_penalization']}")
             ax.set_xlabel("x")
             ax.set_ylabel("y")
+
+        for ax in axes[len(rows):]:
+            ax.set_visible(False)
 
         plt.tight_layout()
         plt.show()
@@ -619,7 +628,9 @@ def interactive_mode():
                     case "area":
                         calculate_ellipse_areas_from_db(db_path, table)
                     case "plot-domains":
-                        plot_domains(db_path, table)
+                        penalty_str = input("Filter by penalization? (Enter value or blank for all): ").strip()
+                        penalty = float(penalty_str) if penalty_str else None
+                        plot_domains(db_path, table, penalty=penalty)
                     case "compare-params":
                         run_id = input("Enter Run ID: ").strip()
                         if run_id.isdigit(): plot_initial_and_best_params(db_path, table, int(run_id))
@@ -673,6 +684,7 @@ def main():
     # Domains
     p_domains = subparsers.add_parser("plot-domains", help="Plot a grid of best solution domains")
     p_domains.add_argument("table", type=str, help="Table name")
+    p_domains.add_argument("-p", "--penalty", type=float, help="Filter runs by a specific linear_penalization value")
     
     # Params
     p_params = subparsers.add_parser("compare-params", help="Compare initial vs. best ellipses")
@@ -707,7 +719,7 @@ def main():
         case "area":
             calculate_ellipse_areas_from_db(args.db, args.table)
         case "plot-domains":
-            plot_domains(args.db, args.table)
+            plot_domains(args.db, args.table, penalty=args.penalty)
         case "compare-params":
             plot_initial_and_best_params(args.db, args.table, args.run_id)
         case "cost-history":

@@ -1,11 +1,11 @@
 # Shape Optimizer Configuration
 optimization_type: SA # can be SA, DSA
-combination_type: lhs # can be grid (cartesian product), zip, lhs
-n_lhs_samples: 15 # default = 10
-max_processes: 2
+combination_type: grid # can be grid (cartesian product), zip, lhs
+n_lhs_samples: 32 # default = 10
+max_processes: 10
 database_name: experiments.db
-table_name: test_new_delaunay # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
-n_runs: 2 # number of trials per configuration
+table_name: lambda_8_test_2 # if bool or null, table = x{x}y{y}n{num_ellipses}lambda{linear_pen}_opt{optimization_type}
+n_runs: 5 # number of trials per configuration
 
 # Problem parameters
 geometric_params:
@@ -20,16 +20,18 @@ geometric_params:
   num_ellipses: 4
 
 penalizations:
-  linear: 15.0
+  linear: 8.0
 
 # Optimization parameters
 kwargs_SA:
-  initial_temp: 1000
-  min_temp: 0.001
-  cooling_rate: 0.995
-  perturbation: [0.06, 0.06, 3.0, 1.0, 3.0]
+  initial_temp: 0.05
+  min_temp: 0.00001
+  cooling_rate: 0.999
+  perturbation: 
+    - [0.03, 0.03, 2.0, 1.0, 2.0]
+    - [0.04, 0.04, 2.0, 1.0, 2.0]
   track_file_name: true
-  gen_seed: 0 # 0 = no seed*
+  gen_seed: 0 # 0 = no seed
   improvement_threshold: 75 # default = 50
 
 
