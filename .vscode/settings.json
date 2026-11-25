@@ -97,4 +97,5 @@
         "sparsecore": "cpp",
         "typeindex": "cpp"
     },
+    "python-envs.defaultEnvManager": "ms-python.python:system",
 }

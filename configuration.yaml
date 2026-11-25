@@ -26,6 +26,7 @@ kwargs_SA: #SA
   cooling_rate: 0.995
   track_file_name: true
   gen_seed: 0 # 0 = no seed
+  sampling: normal # normal, uniform, or cauchy (also accepts a list for sweeps)
   perturbation: [0.08, 0.08, 4.0, 6.0, 4.0]
 
 kwargs_DSA: #DSA
@@ -41,3 +42,4 @@ kwargs_DSA: #DSA
   min_cost_gap: 0.01
   track_file_name: true
   gen_seed: 0 # 0 = no seed
+  sampling: normal # normal, uniform, or cauchy (also accepts a list for sweeps)

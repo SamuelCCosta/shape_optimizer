@@ -11,13 +11,22 @@ import copy
 import itertools
 import os
 import sqlite3
+import math
+from contextlib import closing
 from db_utils import database_writer, get_column_names_dict, unfold_parameters, get_cpu_model
+
+
+def validate_sampling(sampling):
+    if sampling not in ('normal', 'uniform', 'cauchy'):
+        raise ValueError("sampling must be 'normal', 'uniform', or 'cauchy'")
+    return sampling
 
 
 class EllipseSA(BaseSimulatedAnnealing):
     '''Classical SA algorithm, needs an initial suitable configuration to progress with the optimization'''
     def __init__(self, geometric_params : dict, penalizations : dict, **kwargs):
         self.gen_seed = kwargs.pop('gen_seed', 0)
+        self.sampling = validate_sampling(kwargs.pop('sampling', 'normal'))
         self.generation_attempts = 0 # Guarantee the seed works or gives a deterministic suitable seed
 
         self.num_ellipses = geometric_params['num_ellipses']
@@ -60,8 +69,15 @@ class EllipseSA(BaseSimulatedAnnealing):
             return float('inf'), True
     
     def get_neighbour(self, state):
-        noise = [random.normalvariate(0.0, 1.0) * p for p in self.perturbation]
-        #noise = [random.uniform(-p, p) for p in self.perturbation] 
+        match self.sampling:
+            case 'normal':
+                noise = [random.normalvariate(0.0, 1.0) * p for p in self.perturbation]
+            case 'uniform':
+                noise = [random.uniform(-p, p) for p in self.perturbation]
+            case 'cauchy':
+                noise = [math.tan(math.pi * (random.random() - 0.5)) * p for p in self.perturbation]
+            case _:
+                raise ValueError("sampling must be 'normal', 'uniform', or 'cauchy'")
         return [s + n for s, n in zip(state, noise)]
     
     def raw_generation_function(self, seed=0):
@@ -111,6 +127,7 @@ class EllipseDSA(DirectSimulatedAnnealing):
     '''Direct SA algorithm'''
     def __init__(self, geometric_params : dict, penalizations : dict, **kwargs):
         self.gen_seed = kwargs.pop('gen_seed', 0)
+        self.sampling = validate_sampling(kwargs.pop('sampling', 'normal'))
         self.generation_attempts = 0
         super().__init__(**kwargs)
         self.geometric_params = geometric_params
@@ -146,7 +163,15 @@ class EllipseDSA(DirectSimulatedAnnealing):
             return float('inf'), True
     
     def get_neighbour(self, state):
-        noise = [random.normalvariate(0.0, 1.0) * scale for scale in self.perturbation]
+        match self.sampling:
+            case 'normal':
+                noise = [random.normalvariate(0.0, 1.0) * p for p in self.perturbation]
+            case 'uniform':
+                noise = [random.uniform(-p, p) for p in self.perturbation]
+            case 'cauchy':
+                noise = [math.tan(math.pi * (random.random() - 0.5)) * p for p in self.perturbation]
+            case _:
+                raise ValueError("sampling must be 'normal', 'uniform', or 'cauchy'")
         return [s + n for s, n in zip(state, noise)]
     
     def raw_generation_function(self, seed=0):
@@ -346,6 +371,11 @@ def run_experiments(worker_target, combinations, extra_worker_args=(),
         print("No combinations to run.")
         return
 
+    for combo_bundle in combinations:
+        kwargs = combo_bundle['kwargs_optimization']
+        kwargs['sampling'] = validate_sampling(kwargs.get('sampling', 'normal'))
+        kwargs.setdefault('gen_seed', 0)
+
     first_bundle = combinations[0]
     column_names = get_column_names_dict(
         geometric_params=first_bundle['geometric_params'],
@@ -355,44 +385,37 @@ def run_experiments(worker_target, combinations, extra_worker_args=(),
     )
     
     # --- SETUP DATABASE & INITIAL INSERTS ---
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (run_id INTEGER PRIMARY KEY AUTOINCREMENT)")
-    cursor.execute(f"PRAGMA table_info({table_name})")
-    existing_columns = {row[1] for row in cursor.fetchall()}
-    for name, sql_type in column_names.items():
-        if name not in existing_columns:
-            if sql_type not in ('REAL', 'INTEGER', 'TEXT'):
-                sql_type = 'REAL'
-            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {name} {sql_type}")
-            
-    db_name = os.path.splitext(os.path.basename(db_path))[0]
-    
-    for combo_bundle in combinations:
-        run_parameters = combo_bundle['kwargs_optimization'].copy()
-        for pen_type in combo_bundle['penalizations']:
-            run_parameters[pen_type + '_penalization'] = combo_bundle['penalizations'][pen_type]
-        run_parameters |= combo_bundle['geometric_params']
-        run_parameters = unfold_parameters(run_parameters)
-        
-        columns = list(run_parameters.keys())
-        columns_sql = ', '.join(columns)
-        placeholders_sql = ', '.join([f':{col}' for col in columns])
-        insert_sql = f'INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders_sql})'
-        cursor.execute(insert_sql, run_parameters)
-        run_id = cursor.lastrowid
-        combo_bundle['run_id'] = run_id
-        
-        track_file_name = combo_bundle['kwargs_optimization'].get('track_file_name')
-        if track_file_name is not None and not isinstance(track_file_name, str):
-            csv_dir = f'track_csv/{db_name}/{table_name}'
-            os.makedirs(csv_dir, exist_ok=True)
-            path = f'{csv_dir}/{run_id}.csv'
-            combo_bundle['kwargs_optimization']['track_file_name'] = path
-            cursor.execute(f"UPDATE {table_name} SET track_file_name = ? WHERE run_id = ?", (path, run_id))
-            
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute('BEGIN')
+        cursor = conn.cursor()
+        column_definitions = ', '.join(f'{name} {sql_type}' for name, sql_type in column_names.items())
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} "
+                       f"(run_id INTEGER PRIMARY KEY AUTOINCREMENT, {column_definitions})")
+
+        db_name = os.path.splitext(os.path.basename(db_path))[0]
+
+        for combo_bundle in combinations:
+            run_parameters = combo_bundle['kwargs_optimization'].copy()
+            for pen_type in combo_bundle['penalizations']:
+                run_parameters[pen_type + '_penalization'] = combo_bundle['penalizations'][pen_type]
+            run_parameters |= combo_bundle['geometric_params']
+            run_parameters = unfold_parameters(run_parameters)
+
+            columns = list(run_parameters.keys())
+            columns_sql = ', '.join(columns)
+            placeholders_sql = ', '.join([f':{col}' for col in columns])
+            insert_sql = f'INSERT INTO {table_name} ({columns_sql}) VALUES ({placeholders_sql})'
+            cursor.execute(insert_sql, run_parameters)
+            run_id = cursor.lastrowid
+            combo_bundle['run_id'] = run_id
+
+            track_file_name = combo_bundle['kwargs_optimization'].get('track_file_name')
+            if track_file_name is not None and not isinstance(track_file_name, str):
+                csv_dir = f'track_csv/{db_name}/{table_name}'
+                os.makedirs(csv_dir, exist_ok=True)
+                path = f'{csv_dir}/{run_id}.csv'
+                combo_bundle['kwargs_optimization']['track_file_name'] = path
+                cursor.execute(f"UPDATE {table_name} SET track_file_name = ? WHERE run_id = ?", (path, run_id))
     
     spawn_ctx = mp.get_context('spawn')
     queue = spawn_ctx.Queue()

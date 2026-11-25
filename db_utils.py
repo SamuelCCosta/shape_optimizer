@@ -2,6 +2,23 @@ import sqlite3
 import json
 import multiprocessing as mp
 
+
+def _order_sampling_columns(columns):
+    '''Place gen_seed and sampling immediately before the perturbation column.'''
+    ordered = {}
+    for name, value in columns.items():
+        if name in ('gen_seed', 'sampling'):
+            continue
+        if name in ('perturbation', 'initial_perturbation'):
+            ordered['gen_seed'] = columns['gen_seed']
+            ordered['sampling'] = columns['sampling']
+        ordered[name] = value
+    for name in ('gen_seed', 'sampling'):
+        if name not in ordered:
+            ordered[name] = columns[name]
+    return ordered
+
+
 def database_writer(queue: mp.Queue, db_path="experiments.db", table_name="results"):
     '''Given a queue, listens indefinitely and updates the database when the queue is non empty.
        The function terminates when a None object is inserted in the queue.'''
@@ -37,6 +54,9 @@ def get_column_names_dict(geometric_params: dict, penalizations: dict, kwargs_op
         return sql_type.get(type(val), 'TEXT')
     
     clean_kwargs_optimization = {k: get_sql_type(v) for k, v in kwargs_optimization.items()}
+    clean_kwargs_optimization.setdefault('gen_seed', 'INTEGER')
+    clean_kwargs_optimization['sampling'] = 'TEXT'
+    clean_kwargs_optimization = _order_sampling_columns(clean_kwargs_optimization)
 
     param_SQL_type = get_sql_type(paramtype)
     middle = {'runtime': 'REAL', 'best_param': param_SQL_type, 'best_cost': 'REAL',
